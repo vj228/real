@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Homiva — Know the real cost before you buy</title>
+    <title>yHome — Know the real cost before you buy</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,59 +11,39 @@
     <section class="hero hero-medvi">
         <div class="container hero-medvi__shell">
             <header class="site-header">
-                <a class="site-logo" href="/">Homiva</a>
-                <button type="button" class="site-menu-btn" aria-label="Menu" aria-expanded="false">
-                    <span class="site-menu-icon" aria-hidden="true"></span>
-                </button>
+                <a class="site-logo" href="/">yHome</a>
+                <div class="site-header-actions">
+                    <a href="/intake.php" class="button button-nav-cta">GET MY REPORT</a>
+                </div>
             </header>
 
             <div class="hero-medvi__grid">
-                <div class="hero-medvi__visual">
-                    <div class="hero-collage">
-                        <img
-                            class="hero-collage__img hero-collage__img--1"
-                            src="https://images.pexels.com/photos/8292850/pexels-photo-8292850.jpeg?auto=compress&cs=tinysrgb&w=900"
-                            alt=""
-                            width="600"
-                            height="720"
-                            decoding="async"
-                        >
-                        <img
-                            class="hero-collage__img hero-collage__img--2"
-                            src="https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg?auto=compress&cs=tinysrgb&w=900"
-                            alt=""
-                            width="600"
-                            height="720"
-                            decoding="async"
-                        >
-                        <img
-                            class="hero-collage__img hero-collage__img--3"
-                            src="https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=900"
-                            alt=""
-                            width="600"
-                            height="720"
-                            decoding="async"
-                        >
-                    </div>
-                </div>
-
                 <div class="hero-medvi__copy">
-                    <p class="hero-eyebrow">FOR HOMEBUYERS</p>
-                    <h1 class="hero-medvi__title">Don’t overpay for your home.<br>See the real cost before you buy.</h1>
-                    <p class="hero-subheadline">Paste any address and get a 60-second report on the true monthly cost, hidden risks, and whether this home is a smart move — before you commit.</p>
+                    <p class="hero-eyebrow">Built for 500,000+ yHome Homebuyers</p>
+                    <h1 class="hero-medvi__title">Don’t overpay for your home. See the <span class="hero-highlight">real cost</span> before you buy.</h1>
+                    <ul class="hero-checklist">
+                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Know your real monthly cost</strong></li>
+                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Spot hidden risks before you fall in love</strong></li>
+                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Avoid expensive mistakes most buyers miss</strong></li>
+                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Get a clear buy / wait signal</strong></li>
+                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Works with Zillow, Redfin, or any property address</strong></li>
+                    </ul>
+                    <a href="/intake.php" class="button button-primary button-hero-cta">GET MY HOME REPORT</a>
+                    <p class="trust-copy hero-medvi__trust">Free • No credit check • No signup required</p>
                 </div>
 
                 <div class="hero-medvi__aside">
-                    <ul class="hero-checklist">
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span> Know your real monthly cost (not just the mortgage)</li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span> Spot hidden risks before you fall in love</li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span> Avoid expensive mistakes most buyers miss</li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span> Get a clear “buy or wait” recommendation</li>
-                    </ul>
-                    <p class="hero-medvi__social">Used by smart buyers before making a $500k+ decision</p>
-                    <button type="button" class="button button-primary button-hero-cta js-scroll-to-form">Get My Home Report →</button>
-                    <p class="trust-copy hero-medvi__trust">Free • No credit check • No signup required</p>
-                    <p class="hero-urgency">Every wrong home decision can cost you $10,000+ over time. Check first.</p>
+                    <p class="hero-subheadline">Paste any address and get a 60-second home report on monthly cost, hidden risks, and whether the home is a smart move — before you commit.</p>
+                </div>
+
+                <div class="hero-medvi__visual">
+                    <div class="hero-collage">
+                        <img class="hero-collage__img hero-collage__img--1" src="https://images.pexels.com/photos/8292850/pexels-photo-8292850.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Homebuyer couple reviewing purchase paperwork" width="600" height="720" decoding="async">
+                        <img class="hero-collage__img hero-collage__img--2" src="https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Modern house exterior in daylight" width="600" height="720" decoding="async">
+                        <img class="hero-collage__img hero-collage__img--3" src="https://images.pexels.com/photos/7578910/pexels-photo-7578910.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Family lifestyle moment in a new home" width="600" height="720" decoding="async">
+                        <img class="hero-collage__img hero-collage__img--4" src="https://images.pexels.com/photos/8293779/pexels-photo-8293779.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Real estate agent showing options to buyers" width="600" height="720" decoding="async">
+                        <img class="hero-collage__img hero-collage__img--5" src="https://images.pexels.com/photos/323775/pexels-photo-323775.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Beautiful home exterior with clean landscaping" width="600" height="720" decoding="async">
+                    </div>
                 </div>
             </div>
         </div>
@@ -162,167 +142,13 @@
                     <p>Get a clear report with cost breakdown, risks, and next steps.</p>
                 </article>
             </div>
-        </div>
-    </section>
-
-    <section class="section section-soft" id="budget-form">
-        <div class="container form-layout">
-            <div class="section-intro">
-                <span class="section-label">Check this property</span>
-                <h2>Find out if this home looks like a smart decision</h2>
-                <p>Start with the property address. Then answer a few short questions so we can show the likely monthly cost and the biggest financial tradeoffs.</p>
-            </div>
-
-            <div class="form-card">
-                <form id="affordability-form" novalidate>
-                    <div class="address-check" id="address-check">
-                        <label>
-                            <span>Property address</span>
-                            <input type="text" name="propertyAddress" placeholder="Enter a Zillow, Redfin, or any property address" required>
-                            <small>Works with Zillow, Redfin, or any property address</small>
-                        </label>
-                        <button type="button" class="button button-primary button-full" id="start-report-button">Check the Real Cost & Risk</button>
-                        <p class="form-message" id="address-message" aria-live="polite"></p>
-
-                        <div class="value-preview">
-                            <h3>You’ll get a quick home buying report:</h3>
-                            <ul>
-                                <li>Your estimated true monthly cost</li>
-                                <li>A clear Safe / Borderline / Risky decision</li>
-                                <li>What this means before you make an offer</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div class="quiz-shell is-hidden" id="quiz-shell">
-                        <div class="assessment-meta">
-                            <span class="assessment-progress" id="assessment-progress">Step 1 of 3</span>
-                            <div class="progress-bar" aria-hidden="true">
-                                <span class="progress-bar-fill" id="progress-bar-fill"></span>
-                            </div>
-                        </div>
-
-                        <div class="assessment-step is-active" data-step="1">
-                            <h3 class="step-heading">Tell us about your situation</h3>
-                            <div class="form-grid">
-                                <label>
-                                    <span>Annual income</span>
-                                    <input type="number" name="annualIncome" min="0" step="1000" placeholder="e.g. 120000" required>
-                                </label>
-                                <label>
-                                    <span>Monthly debt</span>
-                                    <input type="number" name="monthlyDebt" min="0" step="50" placeholder="e.g. 500" required>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="assessment-step" data-step="2">
-                            <h3 class="step-heading">Your buying setup</h3>
-                            <div class="form-grid">
-                                <label>
-                                    <span>House offer price</span>
-                                    <input type="number" name="offerPrice" min="0" step="1000" placeholder="e.g. 550000" required>
-                                </label>
-                                <label>
-                                    <span>Down payment</span>
-                                    <input type="number" name="downPayment" min="0" step="1000" placeholder="e.g. 40000" required>
-                                </label>
-                                <label>
-                                    <span>Monthly HOA <em>(optional)</em></span>
-                                    <input type="number" name="hoa" min="0" step="25" placeholder="e.g. 250">
-                                </label>
-                                <label>
-                                    <span>Interest rate % <em>(optional, default 6.5)</em></span>
-                                    <input type="number" name="interestRate" min="0" step="0.1" value="6.5" placeholder="e.g. 6.5">
-                                </label>
-                                <label>
-                                    <span>Property tax rate % <em>(optional, default 1.1)</em></span>
-                                    <input type="number" name="propertyTaxRate" min="0" step="0.1" value="1.1" placeholder="e.g. 1.1">
-                                </label>
-                                <label>
-                                    <span>Credit score range</span>
-                                    <select name="creditRange" required>
-                                        <option value="">Select a range</option>
-                                        <option value="under-600">Under 600</option>
-                                        <option value="600-679">600-679</option>
-                                        <option value="680-739">680-739</option>
-                                        <option value="740-plus">740+</option>
-                                    </select>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="assessment-step" data-step="3">
-                            <h3 class="step-heading">Where should we send your report?</h3>
-                            <label>
-                                <span>Email</span>
-                                <input type="email" name="email" placeholder="you@example.com" required>
-                            </label>
-                        </div>
-                    </div>
-
-                    <p class="form-message" id="form-message" aria-live="polite"></p>
-                    <p class="loading-message is-hidden" id="loading-message" aria-live="polite">Analyzing this property...</p>
-
-                    <div class="assessment-actions is-hidden" id="assessment-actions">
-                        <button type="button" class="button button-secondary is-hidden" id="back-button">Back</button>
-                        <button type="button" class="button button-primary" id="next-button">Continue</button>
-                        <button type="submit" class="button button-primary is-hidden" id="submit-button">See My Report</button>
-                    </div>
-                </form>
-            </div>
-
-            <div class="result-card is-hidden" id="result-card" aria-live="polite">
-                <span class="section-label">Before You Buy This Home — Here’s What You Should Know</span>
-                <h3 class="result-score-heading">Your Home Decision Result</h3>
-
-                <div class="decision-card decision-safe" id="decision-card">
-                    <p class="decision-label">Decision Score</p>
-                    <p class="decision-value"><span class="decision-icon" id="decision-icon">✓</span><span id="decision-score-value">Safe to Buy</span></p>
-                    <p class="result-note" id="result-message">This home appears to be a comfortable fit based on your numbers.</p>
-                    <p class="report-leftover">Estimated Monthly Flex Cash: <strong id="leftover-value">$0</strong></p>
-                </div>
-
-                <div class="report-panel report-panel-strong">
-                    <h4>Estimated Monthly Cost: <span id="true-monthly-cost-value">$0</span></h4>
-                    <ul class="report-list">
-                        <li><span>Mortgage</span><strong id="mortgage-value">$0</strong></li>
-                        <li><span>Taxes (estimated)</span><strong id="taxes-value">$0</strong></li>
-                        <li><span>Insurance (estimated)</span><strong id="insurance-value">$0</strong></li>
-                        <li class="is-hidden" id="hoa-row"><span>HOA</span><strong id="hoa-value">$0</strong></li>
-                    </ul>
-                </div>
-
-                <div class="report-panel">
-                    <h4>Your Inputs</h4>
-                    <ul class="report-list">
-                        <li><span>Property address</span><strong id="input-address-value">-</strong></li>
-                        <li><span>House offer price</span><strong id="input-offer-price-value">$0</strong></li>
-                        <li><span>Annual income</span><strong id="input-income-value">$0</strong></li>
-                        <li><span>Monthly debt</span><strong id="input-debt-value">$0</strong></li>
-                        <li><span>Down payment</span><strong id="input-down-payment-value">$0</strong></li>
-                        <li><span>Monthly HOA</span><strong id="input-hoa-value">$0</strong></li>
-                        <li><span>Interest rate</span><strong id="input-interest-rate-value">6.5%</strong></li>
-                        <li><span>Property tax rate</span><strong id="input-tax-rate-value">1.1%</strong></li>
-                        <li><span>Credit score range</span><strong id="input-credit-range-value">-</strong></li>
-                        <li><span>Email</span><strong id="input-email-value">-</strong></li>
-                    </ul>
-                </div>
-
-                <div class="report-panel">
-                    <h4>Key Insight</h4>
-                    <p class="report-copy" id="meaning-value">This home may stretch your monthly budget.</p>
-                </div>
-
-                <div class="result-cta-group">
-                    <button type="button" class="button button-primary button-full result-action-button">Get My Full Plan</button>
-                    <button type="button" class="button button-secondary button-full result-action-button">Talk to a Local Expert</button>
-                </div>
-                <p class="follow-up-message is-hidden" id="follow-up-message">Coming soon — we’ll email you details.</p>
-                <p class="result-disclaimer">This is an estimate, not mortgage or financial advice. Actual costs depend on lender approval, interest rates, taxes, insurance, HOA, and local market conditions.</p>
+            <div class="section-cta-row">
+                <a href="/intake.php" class="button button-primary">GET MY HOME REPORT</a>
             </div>
         </div>
     </section>
+
+
 
     <section class="section">
         <div class="container">
@@ -331,6 +157,7 @@
                     <h2>Built for buyers who want clarity before they commit</h2>
                     <p>Use this tool to see the likely cost, risk, and tradeoffs of a specific home before making one of the biggest financial decisions of your life.</p>
                     <p class="social-proof-note">Early access — results improving as we onboard more users</p>
+                    <a href="/intake.php" class="button button-primary social-proof-cta">CHECK THIS HOME NOW</a>
                 </div>
                 <div class="trust-card">
                     <img
@@ -369,6 +196,9 @@
                         <p>See whether this home looks worth pursuing or whether a lower price point may give you more flexibility.</p>
                     </article>
                 </div>
+                <div class="section-cta-row">
+                    <a href="/intake.php" class="button button-primary">START MY 60-SECOND REPORT</a>
+                </div>
             </div>
         </div>
     </section>
@@ -381,7 +211,7 @@
                     <h2>Check this home before you make an offer, book another showing, or talk to a lender.</h2>
                     <p class="trust-copy">Free • No obligation • Instant results</p>
                 </div>
-                <button type="button" class="button button-primary js-scroll-to-form">Check My Home Risk</button>
+                <a href="/intake.php" class="button button-primary">Check My Home Risk</a>
             </div>
         </div>
     </section>
@@ -393,6 +223,5 @@
     </section>
 </main>
 
-<script src="/app.js" defer></script>
 </body>
 </html>
