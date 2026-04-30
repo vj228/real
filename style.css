@@ -236,11 +236,11 @@ main {
 }
 
 .hero-medvi__title {
-    font-size: clamp(2.5rem, 8vw, 5rem);
+    font-size: clamp(1.875rem, 6vw, 3.75rem);
     font-weight: 800;
     line-height: 1.03;
-    max-width: 18ch;
-    margin-bottom: 28px;
+    max-width: 24ch;
+    margin: 0 auto 28px;
 }
 
 .hero-highlight {
@@ -262,24 +262,26 @@ main {
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 10px 24px;
+    gap: 12px 24px;
+    width: min(100%, 980px);
 }
 
 @media (min-width: 520px) {
     .hero-checklist {
-        grid-template-columns: repeat(2, minmax(0, max-content));
-        justify-content: center;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 .hero-checklist li {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr);
+    align-items: start;
     gap: 12px;
     font-size: 1rem;
     font-weight: 600;
     color: var(--text);
     text-align: left;
+    line-height: 1.38;
 }
 
 .hero-checklist__mark {
@@ -978,6 +980,11 @@ select:focus {
     padding: 32px;
 }
 
+.final-cta .button {
+    min-width: 260px;
+    white-space: nowrap;
+}
+
 .section-disclaimer {
     padding-top: 0;
 }
@@ -1073,11 +1080,11 @@ select:focus {
 
 @media (min-width: 960px) {
     .hero-medvi__title {
-        font-size: clamp(4rem, 6vw, 5.1rem);
+        font-size: clamp(3rem, 4.5vw, 3.825rem);
     }
 
     .hero-medvi__copy {
-        max-width: 900px;
+        max-width: 1080px;
     }
 
     .hero-medvi__aside {

@@ -180,44 +180,44 @@ function getCreditScorePoints(creditRange) {
 function getScoreBand(score) {
     if (score >= 80) {
         return {
-            label: 'Strong',
-            message: "Strong - You're in a comfortable position for this home.",
-            insight: "You're in a strong financial position for this purchase.",
+            label: 'Comfortably Affordable',
+            message: 'Based on your income, debt, and down payment, this home appears to fit comfortably within your budget.',
+            insight: 'This home appears to fit comfortably within your budget, giving you room to manage other expenses and save.',
             tone: 'safe'
         };
     }
 
     if (score >= 65) {
         return {
-            label: 'Good',
-            message: 'Good - This home is likely affordable for most buyers.',
-            insight: 'This home fits within a typical buyer range.',
+            label: 'Manageable',
+            message: 'Based on your income, debt, and down payment, this home looks manageable with moderate monthly pressure.',
+            insight: 'This home looks manageable for your current profile, but keeping healthy cash reserves will still matter.',
             tone: 'safe'
         };
     }
 
     if (score >= 50) {
         return {
-            label: 'Stretch',
-            message: 'Stretch - This is common, but may feel tight month-to-month.',
-            insight: 'This is a common range for buyers, but expect tighter cash flow.',
+            label: 'Borderline',
+            message: 'Based on your income, debt, and down payment, this home may feel tight month to month.',
+            insight: 'This home may be possible, but your monthly flexibility could be limited unless you improve the structure of the deal.',
             tone: 'borderline'
         };
     }
 
     if (score >= 35) {
         return {
-            label: 'Tight',
-            message: 'Tight - You may qualify, but financial pressure could be high.',
-            insight: 'This home may stretch your budget significantly.',
+            label: 'Financially Tight',
+            message: 'Based on your income, debt, and down payment, this home may place significant pressure on your monthly budget.',
+            insight: 'This home could limit your financial flexibility and make monthly expenses feel stressful. You may want to consider a lower price range or increasing your down payment.',
             tone: 'borderline'
         };
     }
 
     return {
         label: 'High Risk',
-        message: 'High Risk - This home may not be financially comfortable.',
-        insight: 'This home may be financially risky based on your current numbers.',
+        message: 'Based on your numbers, this purchase may create high financial strain and elevated risk.',
+        insight: 'This home may put too much pressure on your finances right now. Consider a lower price point or a stronger down payment before moving forward.',
         tone: 'risky'
     };
 }
@@ -281,7 +281,7 @@ function calculateReport(data) {
         trueMonthlyCost,
         leftoverForLife,
         affordabilityScore: totalScore,
-        decisionScore: `${scoreBand.label} (${totalScore}/100)`,
+        decisionScore: `${totalScore} / 100 — ${scoreBand.label}`,
         decisionTone: scoreBand.tone,
         decisionMessage: getDecisionMessage(scoreBand),
         meaningMessage: getMeaningMessage(scoreBand)
@@ -371,9 +371,9 @@ form.addEventListener('submit', (event) => {
     loadingMessage.classList.remove('is-hidden');
 
     const loadingFrames = [
-        'Analyzing this property...',
-        'Estimating true monthly cost...',
-        'Checking affordability risk...'
+        'Analyzing this home...',
+        'Calculating true monthly cost...',
+        'Evaluating financial pressure...'
     ];
     let loadingIndex = 0;
     loadingMessage.textContent = loadingFrames[loadingIndex];

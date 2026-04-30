@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yHome -- Know the real cost before you buy</title>
+    <title>yHome - Know the real cost before you buy</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -13,14 +13,14 @@
             <header class="site-header">
                 <a class="site-logo" href="/">yHome</a>
                 <div class="site-header-actions">
-                    <a href="/intake.php" class="button button-nav-cta">GET MY REPORT</a>
+                    <a href="/intake.php" class="button button-nav-cta">Check Before You Offer</a>
                 </div>
             </header>
 
             <div class="hero-medvi__grid">
                 <div class="hero-medvi__copy">
-                    <p class="hero-eyebrow">Built for 500,000+ yHome Homebuyers</p>
-                    <h1 class="hero-medvi__title">Don’t overpay for your home. See the <span class="hero-highlight">real cost</span> before you buy.</h1>
+                    <p class="hero-eyebrow">For homebuyers making a serious decision</p>
+                    <h1 class="hero-medvi__title">Don’t overpay for your home. Know the <span class="hero-highlight">real cost and risk</span> before you make an offer.</h1>
                     <ul class="hero-checklist">
                         <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Know your real monthly cost</strong></li>
                         <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Spot hidden risks before you fall in love</strong></li>
@@ -28,12 +28,12 @@
                         <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Get a clear buy / wait signal</strong></li>
                         <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Works with Zillow, Redfin, or any property address</strong></li>
                     </ul>
-                    <a href="/intake.php" class="button button-primary button-hero-cta">GET MY HOME REPORT</a>
+                    <a href="/intake.php" class="button button-primary button-hero-cta">Check Before You Offer</a>
                     <p class="trust-copy hero-medvi__trust">Free • No credit check • No signup required</p>
                 </div>
 
                 <div class="hero-medvi__aside">
-                    <p class="hero-subheadline">Paste any address and get a 60-second home report on monthly cost, hidden risks, and whether the home is a smart move — before you commit.</p>
+                    <p class="hero-subheadline">Paste the address and get a clear breakdown of the true monthly cost, financial pressure, and whether this home is a smart decision for you — in under 60 seconds.</p>
                 </div>
 
                 <div class="hero-medvi__visual">
@@ -121,29 +121,29 @@
         <div class="container">
             <div class="section-intro">
                 <span class="section-label1">How it works</span>
-                <h2>A simple home decision report built around the property you are considering</h2>
-                <p>In about a minute, you can see the likely monthly cost, the biggest risk signals, and what this home may mean for your budget.</p>
+                    <h2>A clear decision report before you commit to a home</h2>
+                    <p>In about a minute, you’ll see what this purchase could mean for your budget and whether it may create unnecessary financial pressure.</p>
             </div>
 
             <div class="steps-grid">
                 <article class="step-card">
                     <span class="step-number">1</span>
                     <h3>Enter the property address</h3>
-                    <p>Start with the exact home you are thinking about.</p>
+                    <p>Start with the exact home you’re considering.</p>
                 </article>
                 <article class="step-card">
                     <span class="step-number">2</span>
-                    <h3>Tell us about your finances</h3>
+                    <h3>Share your financial details</h3>
                     <p>Income, debt, down payment, and credit range.</p>
                 </article>
                 <article class="step-card">
                     <span class="step-number">3</span>
-                    <h3>See if this home looks smart or risky</h3>
-                    <p>Get a clear report with cost breakdown, risks, and next steps.</p>
+                    <h3>Get a confident next-step signal</h3>
+                    <p>See if this home looks manageable, tight, or risky before you move forward.</p>
                 </article>
             </div>
             <div class="section-cta-row">
-                <a href="/intake.php" class="button button-primary">GET MY HOME REPORT</a>
+                <a href="/intake.php" class="button button-primary">Check Before You Offer</a>
             </div>
         </div>
     </section>
@@ -154,10 +154,10 @@
         <div class="container">
             <div class="trust-section">
                 <div class="social-proof">
-                    <h2>Built for buyers who want clarity before they commit</h2>
-                    <p>Use this tool to see the likely cost, risk, and tradeoffs of a specific home before making one of the biggest financial decisions of your life.</p>
-                    <p class="social-proof-note">Early access — results improving as we onboard more users</p>
-                    <a href="/intake.php" class="button button-primary social-proof-cta">CHECK THIS HOME NOW</a>
+                    <h2>Designed to help you buy with confidence, not guesswork</h2>
+                    <p>yHome helps you understand affordability, financial pressure, and risk before an offer so you can protect your budget and avoid costly surprises.</p>
+                    <p class="social-proof-note">Built to guide serious buyers through high-stakes decisions with more clarity.</p>
+                    <a href="/intake.php" class="button button-primary social-proof-cta">Check Before You Offer</a>
                 </div>
                 <div class="trust-card">
                     <img
@@ -180,24 +180,24 @@
             <div class="faq-shell">
                 <div class="section-intro">
                     <span class="section-label">What you will learn</span>
-                    <h2>See the information buyers usually miss until later</h2>
+                    <h2>Answers to the three questions that matter most</h2>
                 </div>
                 <div class="faq-grid">
                     <article class="faq-card">
-                        <h3>Know your real monthly cost</h3>
-                        <p>See more than the listing price so you know what this home may actually feel like month to month.</p>
+                        <h3>Can I truly afford this home?</h3>
+                        <p>See your full monthly housing cost, not just a mortgage estimate.</p>
                     </article>
                     <article class="faq-card">
-                        <h3>Spot financial pressure early</h3>
-                        <p>Find out when a lower down payment, higher debt load, or tighter cash flow could make this home harder to carry.</p>
+                        <h3>Will this create financial stress?</h3>
+                        <p>Understand whether this payment level could strain your month-to-month flexibility.</p>
                     </article>
                     <article class="faq-card">
-                        <h3>Get a clearer next move</h3>
-                        <p>See whether this home looks worth pursuing or whether a lower price point may give you more flexibility.</p>
+                        <h3>Am I about to make a costly mistake?</h3>
+                        <p>Get a clear signal on whether to move forward now or reconsider before you commit.</p>
                     </article>
                 </div>
                 <div class="section-cta-row">
-                    <a href="/intake.php" class="button button-primary">START MY 60-SECOND REPORT</a>
+                    <a href="/intake.php" class="button button-primary">Check Before You Offer</a>
                 </div>
             </div>
         </div>
@@ -208,17 +208,17 @@
             <div class="final-cta">
                 <div>
                     <span class="section-label">Before you move forward</span>
-                    <h2>Check this home before you make an offer, book another showing, or talk to a lender.</h2>
-                    <p class="trust-copy">Free • No obligation • Instant results</p>
+                    <h2>Review this home with confidence before making your next move.</h2>
+                    <p class="trust-copy">Free • No credit check • No signup required</p>
                 </div>
-                <a href="/intake.php" class="button button-primary">Check My Home Risk</a>
+                <a href="/intake.php" class="button button-primary">Check Before You Offer</a>
             </div>
         </div>
     </section>
 
     <section class="section section-disclaimer">
         <div class="container">
-            <p class="page-disclaimer">This is an estimate only and not a mortgage pre-approval. Final numbers depend on lender review, credit verification, interest rates, taxes, insurance, and other factors.</p>
+            <p class="page-disclaimer">This is not a lender approval. Final costs depend on loan terms, taxes, insurance, and market conditions. This report is designed to help you make a more informed decision before moving forward.</p>
         </div>
     </section>
 </main>

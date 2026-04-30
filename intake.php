@@ -20,8 +20,8 @@
 
         <section class="intake-intro-card">
             <img class="intake-hero-image" src="https://images.pexels.com/photos/7578860/pexels-photo-7578860.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Professional real estate agent meeting buyers outside a home" width="1200" height="720" decoding="async">
-            <h1>Start with the home you’re considering</h1>
-            <p>Paste the address or listing location. We’ll estimate the real monthly cost and risk.</p>
+            <h1>Before You Make an Offer, Start Here</h1>
+            <p>Enter the address and a few details. We’ll show you the real monthly cost, financial pressure, and whether this is a smart decision — before you commit.</p>
         </section>
 
         <section class="section section-soft intake-form-section" id="budget-form">
@@ -30,20 +30,22 @@
                     <form id="affordability-form" novalidate>
                         <div class="address-check" id="address-check">
                             <label>
-                                <span>Property address</span>
-                                <input type="text" name="propertyAddress" placeholder="Enter a Zillow, Redfin, or property address" required>
-                                <small>Works with Zillow, Redfin, or any property address</small>
+                                <span>Home you’re considering</span>
+                                <input type="text" name="propertyAddress" placeholder="Paste a Zillow, Redfin, or property address" required>
+                                <small>Takes about 60 seconds • No credit check</small>
                             </label>
-                            <button type="button" class="button button-primary button-full" id="start-report-button">ANALYZE THIS HOME</button>
+                            <button type="button" class="button button-primary button-full" id="start-report-button">Check Before You Offer</button>
                             <p class="form-message" id="address-message" aria-live="polite"></p>
 
                             <div class="value-preview">
-                                <h3>You’ll get a quick home buying report:</h3>
+                                <h3>What You’ll Know Before You Offer:</h3>
                                 <ul>
-                                    <li>Your estimated true monthly cost</li>
-                                    <li>A clear Safe / Borderline / Risky decision</li>
-                                    <li>What this means before you make an offer</li>
+                                    <li>Your true monthly cost (not just the mortgage)</li>
+                                    <li>Whether this decision is comfortable or financially tight</li>
+                                    <li>The risks most buyers miss before making an offer</li>
+                                    <li>A clear “move forward or reconsider” signal</li>
                                 </ul>
+                                <p class="trust-copy">Every wrong home decision can cost you tens of thousands over time. This helps you avoid that.</p>
                             </div>
                         </div>
 
@@ -126,28 +128,34 @@
                 </div>
 
                 <div class="result-card is-hidden" id="result-card" aria-live="polite">
-                    <span class="section-label">Before You Buy — Here’s What You Should Know</span>
-                    <h3 class="result-score-heading">Home Affordability Score</h3>
+                    <span class="section-label">Before You Move Forward — Read This First</span>
+                    <h3 class="result-score-heading">Your Home Decision Report</h3>
 
                     <div class="decision-card decision-safe" id="decision-card">
-                        <p class="decision-label">Home Affordability Score</p>
-                        <p class="decision-value"><span class="decision-icon" id="decision-icon">✓</span><span id="decision-score-value">Safe to Buy</span></p>
-                        <p class="result-note" id="result-message">This home appears to be a comfortable fit based on your numbers.</p>
-                        <p class="report-leftover">Estimated Monthly Flex Cash: <strong id="leftover-value">$0</strong></p>
+                        <p class="decision-label">Affordability Score</p>
+                        <p class="decision-value"><span class="decision-icon" id="decision-icon">✓</span><span id="decision-score-value">38 / 100 — Financially Tight</span></p>
+                        <p class="result-note" id="result-message">Based on your income, debt, and down payment, this home may place significant pressure on your monthly budget.</p>
+                        <p class="report-leftover">Estimated money left after housing each month: <strong id="leftover-value">$0</strong></p>
                     </div>
 
                     <div class="report-panel report-panel-strong">
-                        <h4>Estimated Monthly Cost: <span id="true-monthly-cost-value">$0</span></h4>
+                        <h4>Your Real Monthly Cost: <span id="true-monthly-cost-value">$0</span></h4>
+                        <p class="report-copy">What you’ll likely pay each month — not just the mortgage</p>
                         <ul class="report-list">
-                            <li><span>Mortgage</span><strong id="mortgage-value">$0</strong></li>
-                            <li><span>Taxes (estimated)</span><strong id="taxes-value">$0</strong></li>
-                            <li><span>Insurance (estimated)</span><strong id="insurance-value">$0</strong></li>
-                            <li class="is-hidden" id="hoa-row"><span>HOA</span><strong id="hoa-value">$0</strong></li>
+                            <li><span>Mortgage payment</span><strong id="mortgage-value">$0</strong></li>
+                            <li><span>Property taxes (estimated)</span><strong id="taxes-value">$0</strong></li>
+                            <li><span>Home insurance (estimated)</span><strong id="insurance-value">$0</strong></li>
+                            <li class="is-hidden" id="hoa-row"><span>HOA (if applicable)</span><strong id="hoa-value">$0</strong></li>
                         </ul>
                     </div>
 
+                    <div class="result-cta-group">
+                        <button type="button" class="button button-primary button-full result-action-button">Get My Full Buying Plan</button>
+                        <button type="button" class="button button-secondary button-full result-action-button">Talk to a Local Expert</button>
+                    </div>
+
                     <div class="report-panel">
-                        <h4>Buyer Inputs</h4>
+                        <h4>Your Situation (used for this analysis)</h4>
                         <ul class="report-list">
                             <li><span>Property address</span><strong id="input-address-value">-</strong></li>
                             <li><span>House offer price</span><strong id="input-offer-price-value">$0</strong></li>
@@ -163,16 +171,13 @@
                     </div>
 
                     <div class="report-panel">
-                        <h4>Key Insight</h4>
-                        <p class="report-copy" id="meaning-value">This home may stretch your monthly budget.</p>
+                        <h4>What This Means For You</h4>
+                        <p class="report-copy" id="meaning-value">This home could limit your financial flexibility and make monthly expenses feel stressful. You may want to consider a lower price range or increasing your down payment.</p>
                     </div>
 
-                    <div class="result-cta-group">
-                        <button type="button" class="button button-primary button-full result-action-button">Get My Full Plan</button>
-                        <button type="button" class="button button-secondary button-full result-action-button">Talk to a Local Expert</button>
-                    </div>
+                    <p class="trust-copy">We’ll help you understand your next best step</p>
                     <p class="follow-up-message is-hidden" id="follow-up-message">Coming soon — we’ll email you details.</p>
-                    <p class="result-disclaimer">This is an estimate, not mortgage or financial advice. Actual costs depend on lender approval, interest rates, taxes, insurance, HOA, and local market conditions.</p>
+                    <p class="result-disclaimer">This is not a lender approval. Final costs depend on loan terms, taxes, insurance, and market conditions. This report is designed to help you make a more informed decision before moving forward.</p>
                 </div>
             </div>
         </section>
