@@ -6,19 +6,8 @@ declare(strict_types=1);
  * Requires table marketing_page_visits — see sql/marketing_page_visits.sql
  */
 
-function marketing_normalize_ip(): ?string
-{
-    $raw = '';
-    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
-        $raw = (string) $_SERVER['HTTP_CF_CONNECTING_IP'];
-    } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $raw = (string) $_SERVER['HTTP_X_FORWARDED_FOR'];
-    } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
-        $raw = (string) $_SERVER['REMOTE_ADDR'];
-    }
-    $raw = trim(explode(',', $raw)[0]);
-    return $raw !== '' ? $raw : null;
-}
+require_once __DIR__ . '/pdo_connect.php';
+require_once __DIR__ . '/marketing_client_ip.php';
 
 function marketing_referrer_host(?string $referrer): ?string
 {
@@ -158,51 +147,14 @@ function marketing_device_category(?string $ua): string
     return 'desktop';
 }
 
-function marketing_try_pdo(): ?PDO
-{
-    $configPath = __DIR__ . '/db.credentials.php';
-    if (!is_readable($configPath)) {
-        return null;
-    }
-    /** @var array<string, mixed> $cfg */
-    $cfg = require $configPath;
-
-    $host = isset($cfg['host']) ? (string) $cfg['host'] : 'localhost';
-    $port = isset($cfg['port']) ? (int) $cfg['port'] : 3306;
-    $name = isset($cfg['name']) ? (string) $cfg['name'] : '';
-    $user = isset($cfg['user']) ? (string) $cfg['user'] : '';
-    $pass = isset($cfg['pass']) ? (string) $cfg['pass'] : '';
-
-    if ($name === '' || $user === '') {
-        return null;
-    }
-
-    // Prefer configured host first, then typical Hostinger fallbacks when host is omitted.
-    $hosts = $host !== '' ? [$host] : ['localhost', '127.0.0.1', 'srv827.hstgr.io'];
-    foreach ($hosts as $h) {
-        $dsn = "mysql:host={$h};port={$port};dbname={$name};charset=utf8mb4";
-        try {
-            return new PDO($dsn, $user, $pass, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ]);
-        } catch (PDOException $e) {
-            // try next host
-            continue;
-        }
-    }
-
-    return null;
-}
-
+$GLOBALS['_marketing_visit_id'] = null;
 (function (): void {
     try {
         if (php_sapi_name() === 'cli') {
             return;
         }
 
-        $pdo = marketing_try_pdo();
+        $pdo = db_pdo_connect();
         if ($pdo === null) {
             return;
         }
@@ -228,7 +180,7 @@ function marketing_try_pdo(): ?PDO
         }
         $refHost = marketing_referrer_host($referrer);
 
-        $ip = marketing_normalize_ip();
+        $ip = marketing_client_ip();
         $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : null;
         $device = marketing_device_category($ua);
         $geo = marketing_geo_resolve($ip, $device);
@@ -283,6 +235,7 @@ function marketing_try_pdo(): ?PDO
             ':ucn' => $utm('utm_content'),
             ':ut' => $utm('utm_term'),
         ]);
+        $GLOBALS['_marketing_visit_id'] = (int) $pdo->lastInsertId();
     } catch (Throwable $e) {
         error_log('marketing_track: ' . $e->getMessage());
     }

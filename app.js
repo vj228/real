@@ -301,6 +301,25 @@ function saveLead(data, result) {
     window.localStorage.setItem(storageKey, JSON.stringify(existing));
 }
 
+function persistHomeOfferToServer(data, result) {
+    const visitRaw = window.YHOME_MARKETING_VISIT_ID;
+    const visitId = typeof visitRaw === 'number' && Number.isFinite(visitRaw) && visitRaw > 0 ? visitRaw : null;
+    const body = JSON.stringify({
+        visit_id: visitId,
+        form: data,
+        result
+    });
+    fetch('/save_home_offer.php', {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+        },
+        body,
+        keepalive: true
+    }).catch(() => {});
+}
+
 startReportButton.addEventListener('click', () => {
     if (!validateAddress()) {
         return;
@@ -385,6 +404,7 @@ form.addEventListener('submit', (event) => {
     window.setTimeout(() => {
         const result = calculateReport(data);
         saveLead(data, result);
+        persistHomeOfferToServer(data, result);
 
         console.log('Home report submitted:', data);
         console.log('Home report result:', result);

@@ -17,7 +17,7 @@ require_once __DIR__ . '/marketing_track.php';
             <header class="site-header">
                 <a class="site-logo" href="/">yHome</a>
                 <div class="site-header-actions">
-                    <a href="/intake.php" class="button button-nav-cta">Check Cost & Risk</a>
+                    <a href="/intake.php" class="button button-nav-cta" data-cta-id="nav_check_cost_risk">Check Cost & Risk</a>
                 </div>
             </header>
 
@@ -32,7 +32,7 @@ require_once __DIR__ . '/marketing_track.php';
                         <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Get a clear buy / wait signal</strong></li>
                         <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Works with Zillow, Redfin, or any property address</strong></li>
                     </ul>
-                    <a href="/intake.php" class="button button-primary button-hero-cta">Check Before You Offer</a>
+                    <a href="/intake.php" class="button button-primary button-hero-cta" data-cta-id="hero_check_before_offer">Check Before You Offer</a>
                     <p class="trust-copy hero-medvi__trust">Free • No credit check • No signup required</p>
                 </div>
 
@@ -147,7 +147,7 @@ require_once __DIR__ . '/marketing_track.php';
                 </article>
             </div>
             <div class="section-cta-row">
-                <a href="/intake.php" class="button button-primary">Check Before You Offer</a>
+                <a href="/intake.php" class="button button-primary" data-cta-id="section_how_it_works_check">Check Before You Offer</a>
             </div>
         </div>
     </section>
@@ -161,7 +161,7 @@ require_once __DIR__ . '/marketing_track.php';
                     <h2>Designed to help you buy with confidence, not guesswork</h2>
                     <p>yHome helps you understand affordability, financial pressure, and risk before an offer so you can protect your budget and avoid costly surprises.</p>
                     <p class="social-proof-note">Built to guide serious buyers through high-stakes decisions with more clarity.</p>
-                    <a href="/intake.php" class="button button-primary social-proof-cta">Check Before You Offer</a>
+                    <a href="/intake.php" class="button button-primary social-proof-cta" data-cta-id="section_social_proof_check">Check Before You Offer</a>
                 </div>
                 <div class="trust-card">
                     <img
@@ -201,7 +201,7 @@ require_once __DIR__ . '/marketing_track.php';
                     </article>
                 </div>
                 <div class="section-cta-row">
-                    <a href="/intake.php" class="button button-primary">Check Before You Offer</a>
+                    <a href="/intake.php" class="button button-primary" data-cta-id="section_faq_check">Check Before You Offer</a>
                 </div>
             </div>
         </div>
@@ -215,7 +215,7 @@ require_once __DIR__ . '/marketing_track.php';
                     <h2>Review this home with confidence before making your next move.</h2>
                     <p class="trust-copy">Free • No credit check • No signup required</p>
                 </div>
-                <a href="/intake.php" class="button button-primary">Check Before You Offer</a>
+                <a href="/intake.php" class="button button-primary" data-cta-id="section_final_cta_check">Check Before You Offer</a>
             </div>
         </div>
     </section>
@@ -226,6 +226,9 @@ require_once __DIR__ . '/marketing_track.php';
         </div>
     </section>
 </main>
+
+<script>window.YHOME_MARKETING_VISIT_ID=<?= json_encode($GLOBALS['_marketing_visit_id'] ?? null) ?>;</script>
+<script src="/cta_track.js" defer></script>
 
 </body>
 </html>

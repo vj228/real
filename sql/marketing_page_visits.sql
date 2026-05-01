@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS marketing_page_visits (
     utm_term VARCHAR(255) NULL,
     PRIMARY KEY (id),
     KEY idx_marketing_visits_time (visited_at),
+    KEY idx_marketing_visits_ip (ip_address),
     KEY idx_marketing_visits_referrer_host (referrer_host),
     KEY idx_marketing_visits_path (page_path(191)),
     KEY idx_marketing_visits_utm_source (utm_source(64)),
@@ -33,3 +34,6 @@ CREATE TABLE IF NOT EXISTS marketing_page_visits (
     KEY idx_marketing_geo_country (geo_country_code),
     KEY idx_marketing_geo_city (geo_city(64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Existing DB without idx_marketing_visits_ip:
+-- ALTER TABLE marketing_page_visits ADD KEY idx_marketing_visits_ip (ip_address);

@@ -14,7 +14,7 @@ require_once __DIR__ . '/marketing_track.php';
 <main class="intake-page">
     <section class="intake-shell">
         <header class="intake-header">
-            <a class="site-logo" href="/">yHome</a>
+            <a class="site-logo" href="/" data-cta-id="intake_logo_home">yHome</a>
             <p class="intake-rating">Built for 500,000+ yHome Homebuyers</p>
         </header>
 
@@ -38,7 +38,7 @@ require_once __DIR__ . '/marketing_track.php';
                                 <input type="text" name="propertyAddress" placeholder="Paste a Zillow, Redfin, or property address" required>
                                 <small>Takes about 60 seconds • No credit check</small>
                             </label>
-                            <button type="button" class="button button-primary button-full" id="start-report-button">Check Before You Offer</button>
+                            <button type="button" class="button button-primary button-full" id="start-report-button" data-cta-id="intake_address_start">Check Before You Offer</button>
                             <p class="form-message" id="address-message" aria-live="polite"></p>
 
                             <div class="value-preview">
@@ -124,9 +124,9 @@ require_once __DIR__ . '/marketing_track.php';
                         <p class="loading-message is-hidden" id="loading-message" aria-live="polite">Analyzing this property...</p>
 
                         <div class="assessment-actions is-hidden" id="assessment-actions">
-                            <button type="button" class="button button-secondary is-hidden" id="back-button">Back</button>
-                            <button type="button" class="button button-primary" id="next-button">Continue</button>
-                            <button type="submit" class="button button-primary is-hidden" id="submit-button">See My Report</button>
+                            <button type="button" class="button button-secondary is-hidden" id="back-button" data-cta-id="intake_quiz_back">Back</button>
+                            <button type="button" class="button button-primary" id="next-button" data-cta-id="intake_quiz_continue">Continue</button>
+                            <button type="submit" class="button button-primary is-hidden" id="submit-button" data-cta-id="intake_submit_report">See My Report</button>
                         </div>
                     </form>
                 </div>
@@ -154,8 +154,8 @@ require_once __DIR__ . '/marketing_track.php';
                     </div>
 
                     <div class="result-cta-group">
-                        <button type="button" class="button button-primary button-full result-action-button">Get My Full Buying Plan</button>
-                        <button type="button" class="button button-secondary button-full result-action-button">Talk to a Local Expert</button>
+                        <button type="button" class="button button-primary button-full result-action-button" data-cta-id="intake_result_buying_plan">Get My Full Buying Plan</button>
+                        <button type="button" class="button button-secondary button-full result-action-button" data-cta-id="intake_result_talk_expert">Talk to a Local Expert</button>
                     </div>
 
                     <div class="report-panel">
@@ -188,6 +188,8 @@ require_once __DIR__ . '/marketing_track.php';
     </section>
 </main>
 
+<script>window.YHOME_MARKETING_VISIT_ID=<?= json_encode($GLOBALS['_marketing_visit_id'] ?? null) ?>;</script>
+<script src="/cta_track.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
 </html>
