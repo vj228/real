@@ -44,6 +44,13 @@ const inputEmailValue = document.getElementById('input-email-value');
 let currentStep = 1;
 const totalSteps = steps.length;
 
+/** Resolve /foo/bar/script.php relative to current page (works when app is not at domain root). */
+function yhomeApiUrl(filename) {
+    const pathname = window.location.pathname;
+    const dir = pathname.replace(/[^/]*$/, '');
+    return `${dir}${filename}`;
+}
+
 scrollButtons.forEach((button) => {
     button.addEventListener('click', () => {
         formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -309,15 +316,34 @@ function persistHomeOfferToServer(data, result) {
         form: data,
         result
     });
-    fetch('/save_home_offer.php', {
+    const fetchOpts = {
         method: 'POST',
         headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json'
         },
         body,
-        keepalive: true
-    }).catch(() => {});
+        keepalive: true,
+        credentials: 'same-origin'
+    };
+    const primary = yhomeApiUrl('persist_intake_snapshot.php');
+    fetch(primary, fetchOpts)
+        .then((r) => {
+            if (r.ok) return r.json();
+            if (r.status === 404) {
+                return fetch(yhomeApiUrl('save_home_offer.php'), fetchOpts).then((r2) =>
+                    r2.ok ? r2.json() : Promise.reject(new Error(`save HTTP ${r2.status}`))
+                );
+            }
+
+            return Promise.reject(new Error(`save HTTP ${r.status}`));
+        })
+        .then((j) => {
+            if (!j || j.ok !== true) {
+                console.warn('[yHome] intake not saved:', j && j.error ? j.error : j);
+            }
+        })
+        .catch((e) => console.warn('[yHome] intake save request failed', e));
 }
 
 startReportButton.addEventListener('click', () => {
@@ -401,11 +427,11 @@ form.addEventListener('submit', (event) => {
         loadingMessage.textContent = loadingFrames[loadingIndex];
     }, 400);
 
-    window.setTimeout(() => {
-        const result = calculateReport(data);
-        saveLead(data, result);
-        persistHomeOfferToServer(data, result);
+    const result = calculateReport(data);
+    saveLead(data, result);
+    persistHomeOfferToServer(data, result);
 
+    window.setTimeout(() => {
         console.log('Home report submitted:', data);
         console.log('Home report result:', result);
 
