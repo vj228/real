@@ -1152,6 +1152,12 @@ select:focus {
         height: 220px;
     }
 
+    .hero-collage__img--3,
+    .hero-collage__img--4,
+    .hero-collage__img--5 {
+        display: none;
+    }
+
     .section {
         padding-bottom: 56px;
     }

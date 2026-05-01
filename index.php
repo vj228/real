@@ -1,3 +1,7 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/marketing_track.php';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,7 +17,7 @@
             <header class="site-header">
                 <a class="site-logo" href="/">yHome</a>
                 <div class="site-header-actions">
-                    <a href="/intake.php" class="button button-nav-cta">Check Before You Offer</a>
+                    <a href="/intake.php" class="button button-nav-cta">Check Cost & Risk</a>
                 </div>
             </header>
 
@@ -40,7 +44,7 @@
                     <div class="hero-collage">
                         <img class="hero-collage__img hero-collage__img--1" src="https://images.pexels.com/photos/8292850/pexels-photo-8292850.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Homebuyer couple reviewing purchase paperwork" width="600" height="720" decoding="async">
                         <img class="hero-collage__img hero-collage__img--2" src="https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Modern house exterior in daylight" width="600" height="720" decoding="async">
-                        <img class="hero-collage__img hero-collage__img--3" src="https://images.pexels.com/photos/7578910/pexels-photo-7578910.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Family lifestyle moment in a new home" width="600" height="720" decoding="async">
+                        <img class="hero-collage__img hero-collage__img--3" src="https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Modern home exterior with landscaping" width="600" height="720" decoding="async">
                         <img class="hero-collage__img hero-collage__img--4" src="https://images.pexels.com/photos/8293779/pexels-photo-8293779.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Real estate agent showing options to buyers" width="600" height="720" decoding="async">
                         <img class="hero-collage__img hero-collage__img--5" src="https://images.pexels.com/photos/323775/pexels-photo-323775.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Beautiful home exterior with clean landscaping" width="600" height="720" decoding="async">
                     </div>

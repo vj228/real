@@ -1,3 +1,7 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/marketing_track.php';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
