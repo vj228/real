@@ -326,12 +326,12 @@ function persistHomeOfferToServer(data, result) {
         keepalive: true,
         credentials: 'same-origin'
     };
-    const primary = yhomeApiUrl('persist_intake_snapshot.php');
+    const primary = yhomeApiUrl('api/persist_intake_snapshot.php');
     fetch(primary, fetchOpts)
         .then((r) => {
             if (r.ok) return r.json();
             if (r.status === 404) {
-                return fetch(yhomeApiUrl('save_home_offer.php'), fetchOpts).then((r2) =>
+                return fetch(yhomeApiUrl('api/save_home_offer.php'), fetchOpts).then((r2) =>
                     r2.ok ? r2.json() : Promise.reject(new Error(`save HTTP ${r2.status}`))
                 );
             }

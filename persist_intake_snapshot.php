@@ -2,8 +2,5 @@
 
 declare(strict_types=1);
 
-/**
- * Alias endpoint for intake JSON save — same logic as save_home_offer.php (avoids
- * some browser extensions blocking paths containing “offer”).
- */
-require __DIR__ . '/save_home_offer.php';
+/** @deprecated Use api/persist_intake_snapshot.php — kept for old links and hosts. */
+require __DIR__ . '/api/persist_intake_snapshot.php';

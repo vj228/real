@@ -1,4 +1,10 @@
 (function () {
+    function yhomeApiUrl(filename) {
+        var pathname = window.location.pathname || '/';
+        var dir = pathname.replace(/[^/]*$/, '');
+        return dir + filename;
+    }
+
     function safeVisitId() {
         var v = window.YHOME_MARKETING_VISIT_ID;
         if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
@@ -9,7 +15,7 @@
     }
 
     function beacon(ctaId) {
-        fetch('/track_cta_click.php', {
+        fetch(yhomeApiUrl('api/track_cta_click.php'), {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
