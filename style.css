@@ -1191,3 +1191,127 @@ select:focus {
         border-radius: 20px;
     }
 }
+
+/* Legal pages (terms.php, privacy.php) */
+.legal-page {
+    min-height: 100vh;
+    background: linear-gradient(180deg, #ffffff 0%, var(--hero-mint) 100%);
+}
+
+.legal-page__section {
+    padding-top: 28px;
+    padding-bottom: 64px;
+}
+
+.legal-page__container {
+    max-width: 760px;
+}
+
+.legal-page__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+.legal-page__nav {
+    display: flex;
+    gap: 16px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.legal-page__nav a {
+    color: var(--accent-dark);
+    text-decoration: none;
+}
+
+.legal-page__nav a:hover {
+    text-decoration: underline;
+}
+
+.legal-doc {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: clamp(24px, 4vw, 40px);
+    box-shadow: var(--shadow);
+}
+
+.legal-doc h1 {
+    margin: 0 0 8px;
+    font-size: clamp(1.85rem, 4vw, 2.35rem);
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+}
+
+.legal-doc__meta {
+    margin: 0 0 24px;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.legal-doc h2 {
+    margin: 28px 0 10px;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+}
+
+.legal-doc h3 {
+    margin: 20px 0 8px;
+    font-size: 1.05rem;
+}
+
+.legal-doc p,
+.legal-doc li {
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1.65;
+}
+
+.legal-doc p {
+    margin: 0 0 14px;
+}
+
+.legal-doc ul {
+    margin: 0 0 14px;
+    padding-left: 1.35rem;
+}
+
+.legal-doc li {
+    margin-bottom: 6px;
+}
+
+.legal-doc a {
+    color: var(--accent-dark);
+    font-weight: 600;
+}
+
+.legal-doc a:hover {
+    text-decoration: underline;
+}
+
+.legal-page__footer {
+    margin-top: 28px;
+    text-align: center;
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.legal-page__footer a {
+    color: var(--accent-dark);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.legal-page__footer a:hover {
+    text-decoration: underline;
+}
+
+.legal-page__footer span {
+    margin: 0 8px;
+}
