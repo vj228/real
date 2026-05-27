@@ -1,1 +1,10 @@
 db.credentials.php
+tiktok.credentials.php
+cron/tiktok_credentials.inc.php
+cron/.tiktok_oauth_pkce.json
+vendor/
+credentials.json
+cron/listings_backup.json
+cron/addresses_from_apify.json
+cron/addresses_from_rapidapi.json
+cron/*.backup.json
