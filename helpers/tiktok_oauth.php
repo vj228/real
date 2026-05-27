@@ -186,6 +186,64 @@ function tiktok_tokens_load(): ?array
 /**
  * @param array<string, mixed> $tokens
  */
+function tiktok_oauth_clear_tokens(): void
+{
+    $path = tiktok_tokens_path();
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
+/**
+ * @return list<string>
+ */
+function tiktok_token_scopes(): array
+{
+    $tokens = tiktok_tokens_load();
+    if ($tokens === null) {
+        return [];
+    }
+
+    $scope = trim((string) ($tokens['scope'] ?? ''));
+
+    return $scope === '' ? [] : array_values(array_filter(array_map('trim', explode(',', $scope))));
+}
+
+function tiktok_token_has_scope(string $needed): bool
+{
+    return in_array($needed, tiktok_token_scopes(), true);
+}
+
+/**
+ * @param list<string> $needed
+ */
+function tiktok_require_scopes(array $needed): void
+{
+    $missing = [];
+    foreach ($needed as $scope) {
+        if (!tiktok_token_has_scope($scope)) {
+            $missing[] = $scope;
+        }
+    }
+
+    if ($missing === []) {
+        return;
+    }
+
+    $current = tiktok_token_scopes();
+    $currentLabel = $current === [] ? '(none saved)' : implode(', ', $current);
+
+    throw new RuntimeException(
+        'Missing OAuth scope(s): ' . implode(', ', $missing) . PHP_EOL
+        . 'Current token scopes: ' . $currentLabel . PHP_EOL
+        . PHP_EOL
+        . 'Refresh does NOT add new scopes. Do this:' . PHP_EOL
+        . '1. TikTok Developer Portal → yHome app → enable Content Posting API (Direct Post).' . PHP_EOL
+        . '2. Open https://yhome.pro/tiktok_oauth_start.php?force=1 and approve all permissions.' . PHP_EOL
+        . '3. If still missing: TikTok app → Profile → Menu → Settings → Security → Manage app access → remove yHome, then step 2 again.'
+    );
+}
+
 function tiktok_tokens_save(array $tokens): void
 {
     $tokens['updated_at'] = time();

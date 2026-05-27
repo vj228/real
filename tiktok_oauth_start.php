@@ -34,6 +34,11 @@ if (!is_readable($helperPath)) {
 
 try {
     require_once $helperPath;
+
+    if (isset($_GET['force']) && (string) $_GET['force'] === '1') {
+        tiktok_oauth_clear_tokens();
+    }
+
     $begin = tiktok_oauth_begin();
 } catch (Throwable $e) {
     tiktok_oauth_start_fail($e->getMessage());

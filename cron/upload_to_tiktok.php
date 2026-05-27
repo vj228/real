@@ -474,6 +474,7 @@ $videoUrl = trim(TIKTOK_VIDEO_URL);
 
 try {
     $accessToken = tiktok_ensure_access_token();
+    tiktok_require_scopes(['video.upload', 'video.publish']);
 } catch (RuntimeException $e) {
     script_out($e->getMessage());
     exit(1);

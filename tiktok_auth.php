@@ -95,12 +95,24 @@ $startUrl = '/tiktok_oauth_start.php';
                     <p><a class="button button-primary" href="<?= htmlspecialchars($startUrl, ENT_QUOTES, 'UTF-8') ?>">Try again</a></p>
 
                 <?php elseif ($accessToken !== '' && $savedAutomatically): ?>
+                    <?php
+                    $scopeList = array_filter(array_map('trim', explode(',', $scope)));
+                    $hasPublish = in_array('video.publish', $scopeList, true);
+                    ?>
                     <p><strong>Connected.</strong> Tokens were saved to <code>cron/.tiktok_tokens.json</code> on the server.</p>
-                    <p>Uploads will <strong>refresh the access token automatically</strong> (~every 24 hours). You do not need to authorize again until the refresh token expires (~1 year) or you revoke app access.</p>
-                    <p>Run uploads with:</p>
-                    <pre style="overflow-x:auto;padding:12px;background:#f3f4f6;border-radius:8px;">php cron/upload_to_tiktok.php</pre>
                     <?php if ($scope !== ''): ?>
-                        <p class="legal-doc__meta">Scopes: <?= htmlspecialchars($scope, ENT_QUOTES, 'UTF-8') ?></p>
+                        <p class="legal-doc__meta">Scopes granted: <?= htmlspecialchars($scope, ENT_QUOTES, 'UTF-8') ?></p>
+                    <?php endif; ?>
+                    <?php if (!$hasPublish): ?>
+                        <p><strong style="color:#b45309;">Missing <code>video.publish</code></strong> — auto-publish will not work yet.</p>
+                        <ol>
+                            <li>In <a href="https://developers.tiktok.com/" target="_blank" rel="noopener">TikTok Developer Portal</a> → yHome → add <strong>Content Posting API</strong>.</li>
+                            <li>Revoke yHome in TikTok → Settings → Security → Manage app access.</li>
+                            <li><a href="/tiktok_oauth_start.php?force=1">Authorize again (force)</a></li>
+                        </ol>
+                    <?php else: ?>
+                        <p>Auto-publish is enabled. Run:</p>
+                        <pre style="overflow-x:auto;padding:12px;background:#f3f4f6;border-radius:8px;">php cron/upload_to_tiktok.php</pre>
                     <?php endif; ?>
 
                 <?php elseif ($accessToken !== ''): ?>
