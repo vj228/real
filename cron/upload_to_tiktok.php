@@ -4,18 +4,15 @@
  *
  *   POST https://open.tiktokapis.com/v2/post/publish/inbox/video/init/
  *
- * Credentials: edit cron/tiktok_credentials.inc.php
- *
- * Client key + secret (developer portal) identify your app.
- * access_token is NOT in the portal — get it once via OAuth:
- *   php cron/tiktok_oauth_token.php
+ * Credentials: cron/tiktok_credentials.inc.php (client key, secret, video URL)
+ * Tokens: cron/.tiktok_tokens.json (auto-refreshed; authorize once via tiktok_oauth_start.php)
  *
  * Usage: php cron/upload_to_tiktok.php
  */
 
 declare(strict_types=1);
 
-require __DIR__ . '/tiktok_credentials.inc.php';
+require_once dirname(__DIR__) . '/helpers/tiktok_oauth.php';
 
 const TIKTOK_INBOX_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/';
 
@@ -75,12 +72,12 @@ function tiktok_inbox_video_init(string $accessToken, string $videoUrl): array
     ];
 }
 
-$accessToken = trim(TIKTOK_ACCESS_TOKEN);
 $videoUrl = trim(TIKTOK_VIDEO_URL);
 
-if ($accessToken === '') {
-    script_out('TIKTOK_ACCESS_TOKEN is empty in cron/tiktok_credentials.inc.php');
-    script_out('Get a token: php cron/tiktok_oauth_token.php');
+try {
+    $accessToken = tiktok_ensure_access_token();
+} catch (RuntimeException $e) {
+    script_out($e->getMessage());
     exit(1);
 }
 
@@ -111,6 +108,33 @@ $error = is_array($body['error'] ?? null) ? $body['error'] : [];
 $errorCode = (string) ($error['code'] ?? '');
 $errorMessage = (string) ($error['message'] ?? '');
 $logId = (string) ($error['log_id'] ?? '');
+
+if (($httpCode < 200 || $httpCode >= 300 || $errorCode !== 'ok') && $errorCode === 'access_token_invalid') {
+    try {
+        $tokens = tiktok_tokens_load();
+        if (is_array($tokens)) {
+            $tokens['expires_at'] = 0;
+            tiktok_tokens_save($tokens);
+        }
+        $accessToken = tiktok_ensure_access_token();
+        script_out('Access token refreshed, retrying upload...');
+        $result = tiktok_inbox_video_init($accessToken, $videoUrl);
+        $body = $result['body'];
+        $httpCode = $result['http_code'];
+        if ($body === null) {
+            script_out('Invalid JSON on retry (HTTP ' . $httpCode . '):');
+            script_out($result['raw']);
+            exit(1);
+        }
+        $error = is_array($body['error'] ?? null) ? $body['error'] : [];
+        $errorCode = (string) ($error['code'] ?? '');
+        $errorMessage = (string) ($error['message'] ?? '');
+        $logId = (string) ($error['log_id'] ?? '');
+    } catch (RuntimeException $e) {
+        script_out($e->getMessage());
+        exit(1);
+    }
+}
 
 if ($httpCode < 200 || $httpCode >= 300 || $errorCode !== 'ok') {
     script_out('TikTok API error (HTTP ' . $httpCode . '):');
