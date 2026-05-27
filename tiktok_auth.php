@@ -99,7 +99,13 @@ $startUrl = '/tiktok_oauth_start.php';
                     $scopeList = array_filter(array_map('trim', explode(',', $scope)));
                     $hasPublish = in_array('video.publish', $scopeList, true);
                     ?>
-                    <p><strong>Connected.</strong> Tokens were saved to <code>cron/.tiktok_tokens.json</code> on the server.</p>
+                    <p><strong>Connected.</strong> Tokens were saved to
+                        <code>cron/<?= htmlspecialchars(tiktok_is_sandbox() ? '.tiktok_tokens.sandbox.json' : '.tiktok_tokens.json', ENT_QUOTES, 'UTF-8') ?></code>
+                        on the server.
+                    </p>
+                    <?php if (tiktok_is_sandbox()): ?>
+                        <p class="legal-doc__meta">Sandbox mode — set <code>TIKTOK_USE_SANDBOX = false</code> for production keys after go-live.</p>
+                    <?php endif; ?>
                     <?php if ($scope !== ''): ?>
                         <p class="legal-doc__meta">Scopes granted: <?= htmlspecialchars($scope, ENT_QUOTES, 'UTF-8') ?></p>
                     <?php endif; ?>
@@ -119,7 +125,23 @@ $startUrl = '/tiktok_oauth_start.php';
                     <p><strong>Success</strong> but tokens could not be saved on the server. Ensure <code>cron/</code> is writable, then try again.</p>
 
                 <?php elseif ($exchangeError !== ''): ?>
-                    <p><?= htmlspecialchars($exchangeError, ENT_QUOTES, 'UTF-8') ?></p>
+                    <p><strong><?= htmlspecialchars($exchangeError, ENT_QUOTES, 'UTF-8') ?></strong></p>
+                    <?php if (stripos($exchangeError, 'invalid_client') !== false): ?>
+                        <p>TikTok matched your login, but <strong>client key + secret</strong> on your server do not match the Developer Portal.</p>
+                        <ol>
+                            <li>Open <strong>TikTok Developer Portal</strong> →
+                                <strong><?= tiktok_is_sandbox() ? 'Sandbox tab → sandbox “Real” → App details (Credentials)' : 'Production → App details' ?></strong>.
+                            </li>
+                            <li>Copy <strong>Client key</strong> and <strong>Client secret</strong> from that <em>same</em> screen — never mix Production key with Sandbox secret.</li>
+                            <li>Edit <code>cron/tiktok_credentials.inc.php</code>:
+                                <?= tiktok_is_sandbox()
+                                    ? '<code>TIKTOK_SANDBOX_CLIENT_KEY</code> / <code>TIKTOK_SANDBOX_CLIENT_SECRET</code>'
+                                    : '<code>TIKTOK_PROD_CLIENT_KEY</code> / <code>TIKTOK_PROD_CLIENT_SECRET</code>' ?> (no spaces or line breaks inside the quotes).</li>
+                            <li>If you reset the secret in the portal, paste the new one — old values always fail.</li>
+                            <li><code>TIKTOK_USE_SANDBOX</code> must match the tab you copied (sandbox keys often start with <code>sb</code>).</li>
+                            <li>Upload the file to the server → <a href="/tiktok_oauth_start.php?force=1">Authorize again (?force=1)</a>.</li>
+                        </ol>
+                    <?php endif; ?>
                     <p><a class="button button-primary" href="<?= htmlspecialchars($startUrl, ENT_QUOTES, 'UTF-8') ?>">Start authorization</a></p>
 
                 <?php else: ?>
