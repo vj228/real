@@ -472,6 +472,8 @@ if (PHP_SAPI !== 'cli') {
 
 $videoUrl = trim(TIKTOK_VIDEO_URL);
 
+script_out(tiktok_is_sandbox() ? 'Mode: TikTok SANDBOX' : 'Mode: TikTok PRODUCTION');
+
 try {
     $accessToken = tiktok_ensure_access_token();
     tiktok_require_scopes(['video.upload', 'video.publish']);

@@ -12,8 +12,17 @@ require_once $credentialsPath;
 
 const TIKTOK_AUTH_URL = 'https://www.tiktok.com/v2/auth/authorize/';
 const TIKTOK_TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/';
-const TIKTOK_OAUTH_SCOPES = 'user.info.basic,video.upload,video.publish';
 const TIKTOK_PKCE_TTL_SECONDS = 600;
+
+function tiktok_oauth_scope_string(): string
+{
+    return defined('TIKTOK_OAUTH_SCOPES') ? trim((string) TIKTOK_OAUTH_SCOPES) : 'user.info.basic';
+}
+
+function tiktok_is_sandbox(): bool
+{
+    return defined('TIKTOK_USE_SANDBOX') && TIKTOK_USE_SANDBOX;
+}
 
 function tiktok_oauth_pkce_dir(): string
 {
@@ -58,7 +67,7 @@ function tiktok_oauth_build_authorize_url(string $state, string $challenge): str
     $params = [
         'client_key' => TIKTOK_CLIENT_KEY,
         'response_type' => 'code',
-        'scope' => TIKTOK_OAUTH_SCOPES,
+        'scope' => tiktok_oauth_scope_string(),
         'redirect_uri' => TIKTOK_REDIRECT_URI,
         'state' => $state,
         'code_challenge' => $challenge,
@@ -164,7 +173,9 @@ function tiktok_oauth_exchange_code(string $code, string $codeVerifier): ?array
 
 function tiktok_tokens_path(): string
 {
-    return dirname(__DIR__) . '/cron/.tiktok_tokens.json';
+    $file = tiktok_is_sandbox() ? '.tiktok_tokens.sandbox.json' : '.tiktok_tokens.json';
+
+    return dirname(__DIR__) . '/cron/' . $file;
 }
 
 /**
