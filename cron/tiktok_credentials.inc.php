@@ -28,7 +28,9 @@ const TIKTOK_OAUTH_SCOPES = 'user.info.basic,video.upload,video.publish';
 const TIKTOK_VIDEO_URL = 'https://json2video-cdn1.s3.amazonaws.com/clients/cfeqDsDC6w/renders/2026-05-27-24000.mp4';
 
 const TIKTOK_POST_TITLE = 'Would you pay this much? #realestate #househunting';
-const TIKTOK_PRIVACY_LEVEL = '';
+// For unaudited apps, TikTok often restricts posting to private accounts only.
+// You asked to enforce SELF_ONLY only in Sandbox; production can auto-pick.
+const TIKTOK_PRIVACY_LEVEL = TIKTOK_USE_SANDBOX ? 'SELF_ONLY' : '';
 const TIKTOK_BRAND_CONTENT_TOGGLE = false;
 const TIKTOK_BRAND_ORGANIC_TOGGLE = false;
 
