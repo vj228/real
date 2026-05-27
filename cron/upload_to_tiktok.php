@@ -1,9 +1,9 @@
 <?php
 /**
- * Upload a video to your TikTok inbox (Content Posting API).
+ * Download video and Direct Post to TikTok (auto-publish, no Inbox step).
  *
- * Downloads TIKTOK_VIDEO_URL, uploads via FILE_UPLOAD (no domain verification needed).
- * Tokens: cron/.tiktok_tokens.json (authorize once via tiktok_oauth_start.php)
+ * Requires video.publish scope — re-run tiktok_oauth_start.php once after updating.
+ * Tokens: cron/.tiktok_tokens.json
  *
  * Usage: php cron/upload_to_tiktok.php
  */
@@ -12,7 +12,9 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/helpers/tiktok_oauth.php';
 
-const TIKTOK_INBOX_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/';
+const TIKTOK_DIRECT_POST_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/video/init/';
+const TIKTOK_CREATOR_INFO_URL = 'https://open.tiktokapis.com/v2/post/publish/creator_info/query/';
+const TIKTOK_POST_STATUS_URL = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/';
 const TIKTOK_CHUNK_MIN = 5 * 1024 * 1024;
 const TIKTOK_CHUNK_DEFAULT = 10 * 1024 * 1024;
 
@@ -102,28 +104,35 @@ function tiktok_video_mime_type(string $path): string
 }
 
 /**
- * @param array<string, mixed> $sourceInfo
+ * @param array<string, mixed>|null $body
  * @return array{http_code: int, body: array<string, mixed>|null, raw: string}
  */
-function tiktok_inbox_init_file_upload(string $accessToken, array $sourceInfo): array
+function tiktok_api_post(string $accessToken, string $url, ?array $body = null): array
 {
-    $payload = ['source_info' => $sourceInfo];
-
-    $ch = curl_init(TIKTOK_INBOX_VIDEO_INIT_URL);
+    $ch = curl_init($url);
     if ($ch === false) {
         return ['http_code' => 0, 'body' => null, 'raw' => 'curl_init failed'];
     }
 
-    curl_setopt_array($ch, [
+    $headers = [
+        'Authorization: Bearer ' . $accessToken,
+        'Content-Type: application/json; charset=UTF-8',
+    ];
+
+    $opts = [
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $accessToken,
-            'Content-Type: application/json; charset=UTF-8',
-        ],
-        CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
+        CURLOPT_HTTPHEADER => $headers,
         CURLOPT_TIMEOUT => 120,
-    ]);
+    ];
+
+    if ($body !== null) {
+        $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_THROW_ON_ERROR);
+    } else {
+        $opts[CURLOPT_POSTFIELDS] = '{}';
+    }
+
+    curl_setopt_array($ch, $opts);
 
     $raw = curl_exec($ch);
     $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -144,7 +153,7 @@ function tiktok_inbox_init_file_upload(string $accessToken, array $sourceInfo): 
 }
 
 /**
- * @return array{ok: bool, http_code: int, error_code: string, error_message: string, publish_id: string, raw: string}
+ * @return array{ok: bool, http_code: int, error_code: string, error_message: string, publish_id: string, raw: string, upload_url: string}
  */
 function tiktok_parse_api_response(array $result): array
 {
@@ -158,6 +167,7 @@ function tiktok_parse_api_response(array $result): array
             'error_message' => '',
             'publish_id' => '',
             'raw' => $result['raw'],
+            'upload_url' => '',
         ];
     }
 
@@ -174,6 +184,152 @@ function tiktok_parse_api_response(array $result): array
         'raw' => $result['raw'],
         'upload_url' => (string) ($data['upload_url'] ?? ''),
     ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function tiktok_query_creator_info(string $accessToken): array
+{
+    $result = tiktok_api_post($accessToken, TIKTOK_CREATOR_INFO_URL);
+    $parsed = tiktok_parse_api_response($result);
+    if (!$parsed['ok']) {
+        $msg = $parsed['error_code'] === 'scope_not_authorized'
+            ? 'Missing video.publish scope. Re-authorize: https://yhome.pro/tiktok_oauth_start.php'
+            : ($parsed['error_message'] !== '' ? $parsed['error_message'] : $parsed['error_code']);
+        throw new RuntimeException('Creator info failed: ' . $msg);
+    }
+
+    $data = $result['body']['data'] ?? null;
+
+    return is_array($data) ? $data : [];
+}
+
+/**
+ * @param list<string> $options
+ */
+function tiktok_pick_privacy_level(array $options): string
+{
+    $preferred = trim(TIKTOK_PRIVACY_LEVEL);
+    if ($preferred !== '' && in_array($preferred, $options, true)) {
+        return $preferred;
+    }
+
+    foreach (['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY'] as $level) {
+        if (in_array($level, $options, true)) {
+            return $level;
+        }
+    }
+
+    if ($options === []) {
+        throw new RuntimeException('No privacy_level_options returned from TikTok.');
+    }
+
+    return (string) $options[0];
+}
+
+/**
+ * @param array<string, mixed> $creator
+ * @param array<string, mixed> $sourceInfo
+ * @return array{http_code: int, body: array<string, mixed>|null, raw: string}
+ */
+function tiktok_direct_post_init(string $accessToken, array $creator, array $sourceInfo): array
+{
+    $privacyOptions = $creator['privacy_level_options'] ?? [];
+    if (!is_array($privacyOptions)) {
+        $privacyOptions = [];
+    }
+
+    $privacyLevel = tiktok_pick_privacy_level($privacyOptions);
+
+    $postInfo = [
+        'title' => TIKTOK_POST_TITLE,
+        'privacy_level' => $privacyLevel,
+        'disable_duet' => (bool) ($creator['duet_disabled'] ?? false),
+        'disable_stitch' => (bool) ($creator['stitch_disabled'] ?? false),
+        'disable_comment' => (bool) ($creator['comment_disabled'] ?? false),
+        'brand_content_toggle' => TIKTOK_BRAND_CONTENT_TOGGLE,
+        'brand_organic_toggle' => TIKTOK_BRAND_ORGANIC_TOGGLE,
+    ];
+
+    return tiktok_api_post($accessToken, TIKTOK_DIRECT_POST_INIT_URL, [
+        'post_info' => $postInfo,
+        'source_info' => $sourceInfo,
+    ]);
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function tiktok_fetch_post_status(string $accessToken, string $publishId): ?array
+{
+    $result = tiktok_api_post($accessToken, TIKTOK_POST_STATUS_URL, ['publish_id' => $publishId]);
+    $parsed = tiktok_parse_api_response($result);
+    if (!$parsed['ok']) {
+        return null;
+    }
+
+    $data = $result['body']['data'] ?? null;
+
+    return is_array($data) ? $data : null;
+}
+
+/**
+ * @return array{status: string, tiktok_video_url: string, fail_reason: string}
+ */
+function tiktok_wait_until_published(string $accessToken, string $publishId, string $creatorUsername = ''): array
+{
+    $terminal = ['PUBLISH_COMPLETE', 'FAILED'];
+    $last = ['status' => 'UNKNOWN', 'tiktok_video_url' => '', 'fail_reason' => ''];
+
+    for ($attempt = 0; $attempt < 60; $attempt++) {
+        $data = tiktok_fetch_post_status($accessToken, $publishId);
+        if ($data === null) {
+            if ($attempt < 59) {
+                sleep(5);
+            }
+            continue;
+        }
+
+        $status = (string) ($data['status'] ?? 'UNKNOWN');
+        $failReason = (string) ($data['fail_reason'] ?? '');
+        $postIds = $data['publicaly_available_post_id'] ?? [];
+        if (!is_array($postIds)) {
+            $postIds = [];
+        }
+
+        $tiktokVideoUrl = '';
+        if ($postIds !== []) {
+            $postId = trim((string) $postIds[0]);
+            if ($postId !== '') {
+                $username = trim((string) ($data['creator_username'] ?? ''));
+                if ($username === '') {
+                    $username = $creatorUsername;
+                }
+                $tiktokVideoUrl = $username !== ''
+                    ? 'https://www.tiktok.com/@' . $username . '/video/' . $postId
+                    : 'https://www.tiktok.com/video/' . $postId;
+            }
+        }
+
+        $last = [
+            'status' => $status,
+            'tiktok_video_url' => $tiktokVideoUrl,
+            'fail_reason' => $failReason,
+        ];
+
+        script_out('Publish status: ' . $status);
+
+        if (in_array($status, $terminal, true)) {
+            return $last;
+        }
+
+        if ($attempt < 59) {
+            sleep(5);
+        }
+    }
+
+    return $last;
 }
 
 function tiktok_upload_file_chunks(string $uploadUrl, string $filePath, int $videoSize, int $chunkSize, int $totalChunks, string $mimeType): void
@@ -243,6 +399,12 @@ function tiktok_upload_video(string $accessToken, string $videoUrl): array
     script_out('Downloading video...');
     script_out('Source: ' . $videoUrl);
 
+    $creator = tiktok_query_creator_info($accessToken);
+    $creatorUsername = (string) ($creator['creator_username'] ?? '');
+    if ($creatorUsername !== '') {
+        script_out('Posting as @' . $creatorUsername);
+    }
+
     $localPath = tiktok_download_video($videoUrl);
 
     try {
@@ -251,7 +413,6 @@ function tiktok_upload_video(string $accessToken, string $videoUrl): array
         $mimeType = tiktok_video_mime_type($localPath);
 
         script_out('Downloaded ' . number_format($videoSize) . ' bytes');
-        script_out('Initializing TikTok inbox upload (FILE_UPLOAD)...');
 
         $sourceInfo = [
             'source' => 'FILE_UPLOAD',
@@ -260,7 +421,14 @@ function tiktok_upload_video(string $accessToken, string $videoUrl): array
             'total_chunk_count' => $plan['total_chunk_count'],
         ];
 
-        $initResult = tiktok_inbox_init_file_upload($accessToken, $sourceInfo);
+        $privacyOptions = $creator['privacy_level_options'] ?? [];
+        if (!is_array($privacyOptions)) {
+            $privacyOptions = [];
+        }
+        $privacyLevel = tiktok_pick_privacy_level($privacyOptions);
+        script_out('Initializing Direct Post (privacy: ' . $privacyLevel . ')...');
+
+        $initResult = tiktok_direct_post_init($accessToken, $creator, $sourceInfo);
         $parsed = tiktok_parse_api_response($initResult);
 
         if (!$parsed['ok']) {
@@ -276,6 +444,7 @@ function tiktok_upload_video(string $accessToken, string $videoUrl): array
                 'error_message' => 'TikTok did not return upload_url',
                 'publish_id' => $parsed['publish_id'],
                 'raw' => $parsed['raw'],
+                'upload_url' => '',
             ];
         }
 
@@ -289,7 +458,7 @@ function tiktok_upload_video(string $accessToken, string $videoUrl): array
             $mimeType
         );
 
-        return $parsed;
+        return array_merge($parsed, ['creator_username' => $creatorUsername]);
     } finally {
         @unlink($localPath);
     }
@@ -349,16 +518,41 @@ if (!$parsed['ok']) {
     if ($parsed['error_message'] !== '') {
         script_out('  message: ' . $parsed['error_message']);
     }
+    if (($parsed['error_code'] ?? '') === 'unaudited_client_can_only_post_to_private_accounts') {
+        script_out('  tip: Set TIKTOK_PRIVACY_LEVEL = \'SELF_ONLY\' until TikTok audits your app.');
+    }
     script_out('Raw response:');
     script_out($parsed['raw']);
     exit(1);
 }
 
-script_out('Success.');
-script_out('video_url: ' . $videoUrl);
-if ($parsed['publish_id'] !== '') {
-    script_out('publish_id: ' . $parsed['publish_id']);
+script_out('Waiting for TikTok to publish...');
+
+$publishId = (string) ($parsed['publish_id'] ?? '');
+$creatorUsername = (string) ($parsed['creator_username'] ?? '');
+
+if ($publishId === '') {
+    script_out('No publish_id returned.');
+    exit(1);
 }
-script_out('Open the TikTok app → Inbox to finish editing and publish the video.');
+
+script_out('publish_id: ' . $publishId);
+
+$statusInfo = tiktok_wait_until_published($accessToken, $publishId, $creatorUsername);
+
+script_out('Success.');
+script_out('source_video_url: ' . $videoUrl);
+script_out('tiktok_status: ' . $statusInfo['status']);
+
+if ($statusInfo['tiktok_video_url'] !== '') {
+    script_out('tiktok_video_url: ' . $statusInfo['tiktok_video_url']);
+} elseif ($statusInfo['status'] === 'PUBLISH_COMPLETE') {
+    script_out('tiktok_video_url: (published — link may appear after moderation; check your TikTok profile)');
+} elseif ($statusInfo['status'] === 'FAILED') {
+    script_out('Publish failed: ' . ($statusInfo['fail_reason'] !== '' ? $statusInfo['fail_reason'] : 'unknown'));
+    exit(1);
+} else {
+    script_out('tiktok_video_url: (still processing — check profile @' . $creatorUsername . ' in a few minutes)');
+}
 
 exit(0);
