@@ -521,9 +521,6 @@ if (!$parsed['ok']) {
     if ($parsed['error_message'] !== '') {
         script_out('  message: ' . $parsed['error_message']);
     }
-    if (($parsed['error_code'] ?? '') === 'unaudited_client_can_only_post_to_private_accounts') {
-        script_out('  tip: Set TIKTOK_PRIVACY_LEVEL = \'SELF_ONLY\' until TikTok audits your app.');
-    }
     script_out('Raw response:');
     script_out($parsed['raw']);
     exit(1);
