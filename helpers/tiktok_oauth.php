@@ -2,7 +2,13 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/cron/tiktok_credentials.inc.php';
+$credentialsPath = dirname(__DIR__) . '/cron/tiktok_credentials.inc.php';
+if (!is_readable($credentialsPath)) {
+    throw new RuntimeException(
+        'Missing cron/tiktok_credentials.inc.php — upload it next to your other cron scripts.'
+    );
+}
+require_once $credentialsPath;
 
 const TIKTOK_AUTH_URL = 'https://www.tiktok.com/v2/auth/authorize/';
 const TIKTOK_TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/';
@@ -11,12 +17,23 @@ const TIKTOK_PKCE_TTL_SECONDS = 600;
 
 function tiktok_oauth_pkce_dir(): string
 {
-    $dir = dirname(__DIR__) . '/cron/.tiktok_oauth_pkce';
-    if (!is_dir($dir)) {
-        mkdir($dir, 0700, true);
+    $candidates = [
+        dirname(__DIR__) . '/cron/.tiktok_oauth_pkce',
+        rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/yhome_tiktok_pkce',
+    ];
+
+    foreach ($candidates as $dir) {
+        if (is_dir($dir)) {
+            return $dir;
+        }
+        if (@mkdir($dir, 0755, true) || is_dir($dir)) {
+            return $dir;
+        }
     }
 
-    return $dir;
+    throw new RuntimeException(
+        'Cannot create PKCE storage directory. Make cron/ writable or check temp directory permissions.'
+    );
 }
 
 function tiktok_oauth_pkce_path(string $state): string
@@ -60,11 +77,15 @@ function tiktok_oauth_begin(): array
     $challenge = tiktok_oauth_pkce_challenge($verifier);
     $state = bin2hex(random_bytes(16));
 
-    file_put_contents(tiktok_oauth_pkce_path($state), json_encode([
+    $pkcePath = tiktok_oauth_pkce_path($state);
+    $written = @file_put_contents($pkcePath, json_encode([
         'code_verifier' => $verifier,
         'state' => $state,
         'created_at' => time(),
-    ], JSON_THROW_ON_ERROR));
+    ]));
+    if ($written === false) {
+        throw new RuntimeException('Cannot write PKCE file: ' . $pkcePath);
+    }
 
     return [
         'authorize_url' => tiktok_oauth_build_authorize_url($state, $challenge),
@@ -173,11 +194,19 @@ function tiktok_tokens_save(array $tokens): void
         mkdir($dir, 0700, true);
     }
 
-    file_put_contents(
-        tiktok_tokens_path(),
+    $path = tiktok_tokens_path();
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $written = @file_put_contents(
+        $path,
         json_encode($tokens, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
         LOCK_EX
     );
+    if ($written === false) {
+        throw new RuntimeException('Cannot write tokens file: ' . $path . ' — make cron/ writable.');
+    }
 }
 
 /**

@@ -6,7 +6,22 @@ declare(strict_types=1);
  * TikTok Login Kit redirect URI (https://yhome.pro/tiktok_auth.php).
  */
 
-require_once __DIR__ . '/helpers/tiktok_oauth.php';
+$helperPath = __DIR__ . '/helpers/tiktok_oauth.php';
+$credentialsPath = __DIR__ . '/cron/tiktok_credentials.inc.php';
+if (!is_readable($credentialsPath) || !is_readable($helperPath)) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Missing cron/tiktok_credentials.inc.php or helpers/tiktok_oauth.php on server.';
+    exit;
+}
+try {
+    require_once $helperPath;
+} catch (Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'TikTok setup error: ' . $e->getMessage();
+    exit;
+}
 
 $code = isset($_GET['code']) ? trim((string) $_GET['code']) : '';
 $state = isset($_GET['state']) ? trim((string) $_GET['state']) : '';
