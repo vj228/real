@@ -1,5 +1,4 @@
 db.credentials.php
-cron/tiktok_credentials.inc.php
 cron/.tiktok_oauth_pkce/
 cron/.tiktok_tokens.json
 vendor/
