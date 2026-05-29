@@ -342,11 +342,13 @@ $rapidApiKey = '24c72349a4msh978d1a453ef7522p193f33jsn404aedf6c8e9';
 $rapidApiHost = 'real-estate-zillow-com.p.rapidapi.com';
 $rapidApiPath = '/v1/search/sale';
 $locationOrRid = 'arcadia ca';
+$pageWindow = 12; // rotate through pages to reduce repeats across 2-hour cron runs
+$page = ((int) floor((int) date('G') / 2) % $pageWindow) + 1; // 1..6
 $queryParams = [
     'location_or_rid' => $locationOrRid,
     'property_types' => 'house',
-    'sort' => 'relevant',
-    'page' => '1',
+    'sort' => 'newest',
+    'page' => (string) $page,
     'doz' => '7',
 ];
 
@@ -361,7 +363,7 @@ if (trim($locationOrRid) === '') {
     exit(1);
 }
 
-script_flush('RapidAPI: ' . $rapidApiHost . $rapidApiPath);
+script_flush('RapidAPI: ' . $rapidApiHost . $rapidApiPath . ' (sort=newest, page=' . $page . ')');
 
 $ch = curl_init();
 curl_setopt_array($ch, [
