@@ -8,7 +8,36 @@ declare(strict_types=1);
  */
 
 require_once dirname(__DIR__) . '/pdo_connect.php';
-require_once __DIR__ . '/marketing_client_ip.php';
+
+function marketing_client_ip(): ?string
+{
+    $raw = '';
+    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+        $raw = (string) $_SERVER['HTTP_CF_CONNECTING_IP'];
+    } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $raw = (string) $_SERVER['HTTP_X_FORWARDED_FOR'];
+    } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
+        $raw = (string) $_SERVER['REMOTE_ADDR'];
+    }
+    $raw = trim(explode(',', $raw)[0]);
+
+    return $raw !== '' ? substr($raw, 0, 45) : null;
+}
+
+function marketing_resolve_visit_id_from_payload(PDO $pdo, array $payload): ?int
+{
+    if (!isset($payload['visit_id']) || !is_numeric($payload['visit_id'])) {
+        return null;
+    }
+    $v = (int) $payload['visit_id'];
+    if ($v <= 0) {
+        return null;
+    }
+    $chk = $pdo->prepare('SELECT 1 FROM marketing_page_visits WHERE id = :id LIMIT 1');
+    $chk->execute([':id' => $v]);
+
+    return $chk->fetchColumn() !== false ? $v : null;
+}
 
 function marketing_referrer_host(?string $referrer): ?string
 {
@@ -152,6 +181,7 @@ function marketing_device_category(?string $ua): string
 }
 
 $GLOBALS['_marketing_visit_id'] = null;
+if (!defined('YHOME_MARKETING_LIB_ONLY')) {
 (function (): void {
     try {
         if (php_sapi_name() === 'cli') {
@@ -245,3 +275,4 @@ $GLOBALS['_marketing_visit_id'] = null;
         error_log('marketing_track: ' . $e->getMessage());
     }
 })();
+}

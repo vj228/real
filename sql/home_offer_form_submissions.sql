@@ -59,8 +59,6 @@ ALTER TABLE home_offer_form_submissions
     ADD KEY idx_home_offer_estimated_home (report_estimated_home_price);
 */
 
--- Add ip_address to existing DB: sql/migrate_add_ip_to_cta_and_home_offer.sql
-
 -- Legacy cleanup (optional; run only DROPs for columns that still exist):
 --
 -- ALTER TABLE home_offer_form_submissions DROP COLUMN report_payload_json;

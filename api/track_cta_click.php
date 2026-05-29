@@ -12,8 +12,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 require_once dirname(__DIR__) . '/pdo_connect.php';
-require_once dirname(__DIR__) . '/helpers/marketing_client_ip.php';
-require_once dirname(__DIR__) . '/helpers/marketing_resolve_visit_id.php';
+define('YHOME_MARKETING_LIB_ONLY', true);
+require_once dirname(__DIR__) . '/helpers/marketing_track.php';
 
 function cta_click_read_json(): ?array
 {
