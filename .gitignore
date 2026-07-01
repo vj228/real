@@ -8,3 +8,5 @@ cron/listings_backup.json
 cron/addresses_from_apify.json
 cron/addresses_from_rapidapi.json
 cron/*.backup.json
+video_upload.credentials.php
+videos/**/*.mp4

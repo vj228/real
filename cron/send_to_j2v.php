@@ -1,10 +1,12 @@
 <?php
 /**
- * Zillow listings → J2V vertical videos (1080×1920). DB: zillow_sale_listings.
+ * Zillow listings → J2V vertical slideshow videos (1080×1920).
  *
  *   php cron/send_to_j2v.php                    # render 1 pending listing (sent_to_j2v = 0)
  *   php cron/send_to_j2v.php --zpid=20883641    # re-render one listing (ignores sent_to_j2v)
  *   php cron/send_to_j2v.php --json             # print prompts only, no render
+ *   php cron/send_to_j2v.php --draft             # low-quota test render (does not mark sent_to_j2v)
+ *   php cron/send_to_j2v.php --draft --zpid=...  # draft test for one listing
  *
  * After editing text, you must re-render (script skips sent rows). Use --zpid or:
  *   UPDATE zillow_sale_listings SET sent_to_j2v=0, j2v_file_url=NULL WHERE zpid='...';
@@ -23,9 +25,7 @@ use JSON2Video\Scene;
 
 const J2V_API_KEY = 'HfMvBu1lEY9MVWfVObFQqFLd48WbCHFKcyvCZhme';
 const J2V_FALLBACK_IMAGE = 'https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg';
-const J2V_HOLD_SEC = 1; // pause after text animation finishes
-const J2V_TEXT_COLOR = '#ff0000';
-const J2V_TEXT_STYLE = '001'; // 008 only has 3 bands and strips \n inside a band (breaks 4+ lines)
+const J2V_SCENE_SEC = 3;
 
 /** Zillow listing thumbs (-p_e) are tiny; J2V needs a larger file for vertical video. */
 function j2v_hd_photo_url(string $url): string
@@ -47,11 +47,31 @@ function j2v_money(?float $n): string
     return $n === null ? '—' : '$' . number_format($n, 0);
 }
 
-function j2v_city_from_address(string $address): string
+function j2v_bed_bath_label(?float $beds, ?float $baths): string
 {
-    $parts = array_map('trim', explode(',', $address));
+    $b = $beds === null ? '—' : (string) (fmod($beds, 1.0) === 0.0 ? (int) $beds : $beds);
+    $ba = $baths === null ? '—' : (string) (fmod($baths, 1.0) === 0.0 ? (int) $baths : $baths);
 
-    return $parts[1] ?? ($parts[0] ?? 'this area');
+    return strtoupper("{$b} BEDROOM/{$ba} BATHROOM");
+}
+
+/** @return array{0: string, 1: string} street line, city/state/zip line */
+function j2v_address_lines(string $address): array
+{
+    $address = j2v_sanitize_text(trim($address));
+    $parts = array_values(array_filter(array_map('trim', explode(',', $address)), static fn ($p) => $p !== ''));
+
+    if (count($parts) >= 3) {
+        $street = $parts[0];
+        $cityStateZip = $parts[1] . ', ' . implode(', ', array_slice($parts, 2));
+
+        return [strtoupper($street), strtoupper($cityStateZip)];
+    }
+    if (count($parts) === 2) {
+        return [strtoupper($parts[0]), strtoupper($parts[1])];
+    }
+
+    return [strtoupper($address), ''];
 }
 
 function j2v_listing_from_row(array $row): array
@@ -64,151 +84,60 @@ function j2v_listing_from_row(array $row): array
         $images = [(string) $row['img_src']];
     }
 
+    $hd = [];
+    $seen = [];
+    foreach ($images as $url) {
+        if (!is_string($url) || trim($url) === '') {
+            continue;
+        }
+        $url = j2v_hd_photo_url(trim($url));
+        if (isset($seen[$url])) {
+            continue;
+        }
+        $seen[$url] = true;
+        $hd[] = $url;
+    }
+    if ($hd === []) {
+        $hd[] = j2v_hd_photo_url(J2V_FALLBACK_IMAGE);
+    }
+
     return [
         'listing_id' => (string) ($row['zpid'] ?? $row['id'] ?? ''),
         'zpid' => (string) ($row['zpid'] ?? ''),
         'address' => (string) ($row['address'] ?? ''),
         'list_price' => $row['list_price'] !== null ? (float) $row['list_price'] : null,
-        'zestimate' => $row['zestimate'] !== null ? (float) $row['zestimate'] : null,
-        'price_vs_zestimate_pct' => $row['price_vs_zestimate_pct'] !== null ? (float) $row['price_vs_zestimate_pct'] : null,
-        'price_per_sqft' => $row['price_per_sqft'] !== null ? (float) $row['price_per_sqft'] : null,
         'beds' => $row['beds'] !== null ? (float) $row['beds'] : null,
         'baths' => $row['baths'] !== null ? (float) $row['baths'] : null,
-        'sqft' => $row['sqft'] !== null ? (int) $row['sqft'] : null,
-        'days_on_zillow' => $row['days_on_zillow'] !== null ? (int) $row['days_on_zillow'] : null,
-        'img_src' => !empty($row['img_src']) ? (string) $row['img_src'] : null,
-        'image_urls' => $images,
+        'image_urls' => $hd,
     ];
+}
+
+function j2v_overlay_text(array $listing): string
+{
+    [$street, $cityLine] = j2v_address_lines((string) $listing['address']);
+    $address = $cityLine !== '' ? $street . ', ' . $cityLine : $street;
+
+    return implode("\n", [
+        j2v_bed_bath_label($listing['beds'] ?? null, $listing['baths'] ?? null),
+        'LIST PRICE ' . j2v_money($listing['list_price'] ?? null),
+        $address,
+        'GO TO YHOME.PRO',
+    ]);
 }
 
 function generateVideoPrompt(array $listing): array
 {
-    $city = j2v_city_from_address($listing['address']);
-    $pct = $listing['price_vs_zestimate_pct'];
-    $ppsf = $listing['price_per_sqft'];
-    $days = $listing['days_on_zillow'];
-
-    if ($pct === null) {
-        $angle = 'Beautiful home, but the monthly cost matters more than the listing price.';
-    } elseif ($pct > 10) {
-        $angle = 'This home may be overpriced.';
-    } elseif ($pct >= 3) {
-        $angle = 'Looks close to value, but still check the real cost.';
-    } elseif ($pct >= -3) {
-        $angle = 'Price looks reasonable, but can you actually afford it?';
-    } else {
-        $angle = 'Price looks reasonable, but can you actually afford it?';
-    }
-
-    $hook = 'Before you make an offer on this home, check the real cost.';
-
-    $fresh = ($days !== null && $days <= 5) ? 'Fresh listing in ' . $city : 'Listing in ' . $city;
-    $specs = trim(sprintf(
-        '%s beds • %s baths • %s sqft',
-        $listing['beds'] ?? '—',
-        $listing['baths'] ?? '—',
-        $listing['sqft'] ?? '—'
-    ));
-
-    $overlays = [
-        $hook,
-        $fresh,
-        $specs,
-        'List price: ' . j2v_money($listing['list_price']),
-    ];
-
-    if ($listing['zestimate'] !== null) {
-        $pctLabel = $pct === null ? '' : sprintf('Listed price is %s%% above Zestimate', ltrim((string) round($pct, 1), '+-'));
-        $overlays[] = ' Zestimate: ' . j2v_money($listing['zestimate']);
-        if ($pctLabel !== '') {
-            $overlays[] = $pctLabel;
-        }
-    }
-
-    if ($ppsf !== null) {
-        $line = '$' . number_format($ppsf, 0) . '/sqft';
-        $overlays[] = $line;
-        if ($ppsf > 900) {
-            $overlays[] = 'High cost per sqft — check carefully';
-        }
-    }
-
-    $overlays[] = 'Zillow shows the home.';
-    $overlays[] = 'yhome.pro shows the real monthly cost + risk.';
-    $overlays[] = 'Before you offer, check cost & risk.';
-    $overlays[] = 'yhome.pro';
-
-    $voiceParts = [
-        "This {$city} home",
-        ($days !== null && $days <= 5) ? 'just hit the market' : 'is on the market',
-        'and it looks beautiful.',
-        $angle,
-        'Before making an offer, the list price alone is not enough.',
-        'You need the real monthly cost, taxes, insurance, and whether this home puts too much pressure on your budget.',
-        'Zillow shows the listing.',
-        'yhome.pro helps you decide.',
-        'Check cost and risk before you offer at yhome.pro.',
-    ];
-    $voiceover = implode(' ', $voiceParts);
-
-    $cta = 'Check Cost & Risk Before You Offer';
-
-    $priceLines = 'List price: ' . j2v_money($listing['list_price']);
-    if ($listing['zestimate'] !== null) {
-        $priceLines .= "\n" . 'Zestimate: ' . j2v_money($listing['zestimate']);
-    }
-    if ($pct !== null) {
-        $priceLines .= "\n" . sprintf('Listed price is %s%% above Zestimate', ltrim((string) round($pct, 1), '+-'));
-    }
-
-    $v2j_prompt = "Hook: {$hook}\nAngle: {$angle}\n\nScenes:\n"
-        . "1. Intro (address): {$fresh} / {$specs}\n"
-        . "2. List price + Zestimate\n"
-        . "3. Zillow vs yhome.pro\n"
-        . "4. CTA (address): {$cta}\nyhome.pro\n\nVoiceover:\n{$voiceover}";
-
-    $img = $listing['image_urls'];
-    $pick = static fn (int $i) => j2v_hd_photo_url($img[$i] ?? ($listing['img_src'] ?? J2V_FALLBACK_IMAGE));
-
-    $scenes = [
-        [
-            'url' => $pick(0),
-            'show_address' => true,
-            'base_duration' => 8,
-            'hold_sec' => 0,
-            'lines' => $hook . "\n" . $fresh . "\n" . $specs,
-        ],
-        [
-            'url' => $pick(1),
-            'show_address' => false,
-            'base_duration' => 5,
-            'lines' => $priceLines,
-        ],
-        [
-            'url' => $pick(2),
-            'show_address' => false,
-            'base_duration' => 5,
-            'lines' => "Zillow shows the home.\nyhome.pro shows the real monthly cost + risk.",
-        ],
-        [
-            'url' => $pick(0),
-            'show_address' => true,
-            'base_duration' => 5,
-            'lines' => $cta . "\n" . 'Go To -> yhome.pro',
-        ],
-    ];
+    $overlay = j2v_overlay_text($listing);
+    $imageCount = count($listing['image_urls']);
+    $duration = $imageCount * J2V_SCENE_SEC;
 
     return [
         'listing_id' => $listing['listing_id'],
         'address' => $listing['address'],
-        'hook' => $hook,
-        'angle' => $angle,
-        'overlays' => $overlays,
-        'voiceover' => $voiceover,
-        'cta' => $cta,
-        'v2j_prompt' => $v2j_prompt,
+        'overlay_text' => $overlay,
         'image_urls' => $listing['image_urls'],
-        'scenes' => $scenes,
+        'scene_duration' => J2V_SCENE_SEC,
+        'total_duration' => $duration,
     ];
 }
 
@@ -229,7 +158,7 @@ function generateAllVideoPrompts(array $listings): array
 function j2v_wait_for_render(Movie $movie): array
 {
     $delay = 5;
-    $maxLoops = 360; // ~30 min per video
+    $maxLoops = 360;
     $lastKey = '';
 
     for ($i = 0; $i < $maxLoops; $i++) {
@@ -258,62 +187,60 @@ function j2v_wait_for_render(Movie $movie): array
     throw new RuntimeException('J2V render timed out after 30 minutes');
 }
 
-function j2v_scene_text(bool $showAddress, string $address, string $lines): string
+function j2v_text_settings(): array
 {
-    $lines = j2v_sanitize_text($lines);
-    if ($showAddress) {
-        $addr = j2v_sanitize_text($address);
-
-        return $lines !== '' ? $addr . "\n" . $lines : $addr;
-    }
-
-    return $lines;
+    return [
+        'color' => '#FFFFFF',
+        'font-size' => '5.5vw',
+        'font-weight' => '900',
+        'font-family' => 'Anton',
+        'text-align' => 'center',
+        'vertical-position' => 'bottom',
+        'horizontal-position' => 'center',
+        'line-height' => '1.0',
+        'text-transform' => 'uppercase',
+        'margin' => '0 0 8vh 0',
+        'text-shadow' => '3px 3px 0 #000, -3px 3px 0 #000, 3px -3px 0 #000, -3px -3px 0 #000, 0 4px 10px rgba(0,0,0,0.9)',
+    ];
 }
 
-function j2v_render_prompt(array $prompt): ?string
+function j2v_render_prompt(array $prompt, bool $draft = false): ?string
 {
+    $images = $prompt['image_urls'] ?? [];
+    if ($images === []) {
+        $images = [j2v_hd_photo_url(J2V_FALLBACK_IMAGE)];
+    }
+
+    $dur = (int) ($prompt['scene_duration'] ?? J2V_SCENE_SEC);
+    $overlay = (string) ($prompt['overlay_text'] ?? '');
+    $textSettings = j2v_text_settings();
+
     $movie = new Movie();
     $movie->setAPIKey(J2V_API_KEY);
     $movie->width = 1080;
     $movie->height = 1920;
     $movie->quality = 'high';
-    $movie->draft = false;
+    $movie->draft = $draft;
 
-    foreach ($prompt['scenes'] as $sceneData) {
-        $base = (int) ($sceneData['base_duration'] ?? $sceneData['duration'] ?? 5);
-        $hold = (int) ($sceneData['hold_sec'] ?? J2V_HOLD_SEC);
-        $dur = $base + $hold;
-        $lines = (string) ($sceneData['lines'] ?? '');
-        if ($lines === '') {
-            $lines = (string) ($prompt['hook'] ?? '');
-        }
-        $showAddress = !empty($sceneData['show_address']);
-
+    foreach ($images as $i => $url) {
         $scene = new Scene();
         $scene->duration = $dur;
+        $scene->background_color = '#000000';
+        if ($i > 0) {
+            $scene->transition = ['style' => 'fade', 'duration' => 0.5];
+        }
+
         $scene->addElement([
             'type' => 'image',
-            'src' => j2v_hd_photo_url((string) $sceneData['url']),
+            'src' => (string) $url,
             'duration' => $dur,
-            'resize' => 'cover',
+            'resize' => 'contain',
             'cache' => false,
         ]);
-        $textSettings = array_merge(
-            [
-                'color' => J2V_TEXT_COLOR,
-                'font-size' => '5vw',
-                'font-weight' => '700',
-                'line-height' => '1.45',
-                'text-align' => 'center',
-                'vertical-position' => 'center',
-                'text-shadow' => '2px 2px 6px rgba(0,0,0,0.85)',
-            ],
-            (array) ($sceneData['text_settings'] ?? [])
-        );
         $scene->addElement([
             'type' => 'text',
-            'style' => J2V_TEXT_STYLE,
-            'text' => j2v_scene_text($showAddress, (string) $prompt['address'], $lines),
+            'style' => '001',
+            'text' => $overlay,
             'duration' => $dur,
             'width' => 1000,
             'cache' => false,
@@ -323,7 +250,10 @@ function j2v_render_prompt(array $prompt): ?string
     }
 
     $render = $movie->render();
-    echo 'J2V project: ' . ($render['project'] ?? '?') . " — {$prompt['address']}\n";
+    $mode = $draft ? ' [draft]' : '';
+    echo 'J2V project: ' . ($render['project'] ?? '?') . $mode . " — {$prompt['address']}\n";
+    $totalDur = count($images) * $dur;
+    echo count($images) . ' image(s), ' . $totalDur . "s total\n";
 
     try {
         $result = j2v_wait_for_render($movie);
@@ -359,6 +289,7 @@ function j2v_mark_done(string $zpid, string $fileUrl): bool
 
 // --- run ---
 $jsonOnly = in_array('--json', $argv ?? [], true);
+$draftMode = in_array('--draft', $argv ?? [], true);
 $zpidArg = null;
 foreach ($argv ?? [] as $arg) {
     if (str_starts_with((string) $arg, '--zpid=')) {
@@ -376,7 +307,7 @@ if ($zpidArg !== null && $zpidArg !== '') {
     $stmt->execute([$zpidArg]);
 } else {
     $stmt = $pdo->prepare(
-        'SELECT * FROM zillow_sale_listings WHERE sent_to_j2v = 0 ORDER BY created_at ASC LIMIT 1'
+        'SELECT * FROM zillow_sale_listings WHERE sent_to_j2v = 0 ORDER BY created_at DESC LIMIT 1'
     );
     $stmt->execute();
 }
@@ -399,9 +330,13 @@ if ($jsonOnly) {
 }
 
 foreach ($prompts as $prompt) {
-    $url = j2v_render_prompt($prompt);
+    $url = j2v_render_prompt($prompt, $draftMode);
     if ($url === null) {
         echo "No video URL for {$prompt['listing_id']}\n";
+        continue;
+    }
+    if ($draftMode) {
+        echo "Draft preview (not saved to DB): {$url}\n\n";
         continue;
     }
     if (!j2v_mark_done((string) $prompt['listing_id'], $url)) {
