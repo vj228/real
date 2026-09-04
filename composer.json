@@ -1,7 +1,6 @@
 {
     "require": {
-        "php": ">=8.1",
-        "json2video/json2video-php-sdk": "^2.0"
+        "php": ">=8.1"
     },
     "config": {
         "sort-packages": true

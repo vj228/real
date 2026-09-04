@@ -341,85 +341,81 @@ function rapidapi_listings_from_response(array $data, int $max): array
 $rapidApiKey = '24c72349a4msh978d1a453ef7522p193f33jsn404aedf6c8e9';
 $rapidApiHost = 'real-estate-zillow-com.p.rapidapi.com';
 $rapidApiPath = '/v1/search/sale';
-$locationOrRid = 'arcadia ca';
+$locations = ['arcadia ca', 'alhambra ca'];
 $pageWindow = 12; // rotate through pages to reduce repeats across 2-hour cron runs
-$page = ((int) floor((int) date('G') / 2) % $pageWindow) + 1; // 1..6
-$queryParams = [
-    'location_or_rid' => $locationOrRid,
-    'property_types' => 'house',
-    'sort' => 'newest',
-    'page' => (string) $page,
-    'doz' => '7',
-];
-
+$page = ((int) floor((int) date('G') / 2) % $pageWindow) + 1; // 1..12
 $maxResults = 10;
 
 if ($rapidApiKey === '') {
     script_flush('Set $rapidApiKey in cron/rapid.php.');
     exit(1);
 }
-if (trim($locationOrRid) === '') {
-    script_flush('Set $locationOrRid.');
-    exit(1);
-}
-
-script_flush('RapidAPI: ' . $rapidApiHost . $rapidApiPath . ' (sort=newest, page=' . $page . ')');
-
-$ch = curl_init();
-curl_setopt_array($ch, [
-    CURLOPT_URL => 'https://' . $rapidApiHost . $rapidApiPath . '?' . http_build_query($queryParams),
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_ENCODING => '',
-    CURLOPT_MAXREDIRS => 10,
-    CURLOPT_TIMEOUT => 300,
-    CURLOPT_CONNECTTIMEOUT => 90,
-    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-    CURLOPT_CUSTOMREQUEST => 'GET',
-    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-    CURLOPT_HTTPHEADER => [
-        'Content-Type: application/json',
-        'x-rapidapi-host: ' . $rapidApiHost,
-        'x-rapidapi-key: ' . $rapidApiKey,
-    ],
-]);
-
-$raw = curl_exec($ch);
-$http = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-if ($raw === false) {
-    script_flush('cURL error: ' . curl_error($ch));
-    exit(1);
-}
-
-script_flush('RapidAPI responded HTTP ' . $http);
-
-$data = json_decode($raw, true);
-if (!is_array($data)) {
-    script_flush("Invalid JSON. First 800 bytes:\n" . substr((string) $raw, 0, 800));
-    exit(1);
-}
-
-if ($http < 200 || $http >= 300) {
-    script_flush("RapidAPI error:\n" . json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-    exit(1);
-}
-
-$listings = rapidapi_listings_from_response($data, $maxResults);
-
-if ($listings === []) {
-    script_flush(
-        'No listings parsed. Adjust rapidapi_price_from_record / rapidapi_tax_from_record / address fields. Snippet:'
-        . "\n" . substr(json_encode($data, JSON_UNESCAPED_UNICODE), 0, 1200)
-    );
-    exit(1);
-}
 
 require_once dirname(__DIR__) . '/pdo_connect.php';
-
 $pdo = db_pdo_connect();
 if ($pdo === null) {
     script_flush('DB not configured. Add db.credentials.php and run sql/zillow_sale_listings.sql');
     exit(1);
 }
 
-script_flush('Saving ' . count($listings) . ' listing(s) to zillow_sale_listings.');
-rapidapi_upsert_listings_db($pdo, $listings, $locationOrRid);
+function rapidapi_fetch_sale(string $host, string $path, string $apiKey, array $queryParams): array
+{
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => 'https://' . $host . $path . '?' . http_build_query($queryParams),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_ENCODING => '',
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_TIMEOUT => 300,
+        CURLOPT_CONNECTTIMEOUT => 90,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST => 'GET',
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'x-rapidapi-host: ' . $host,
+            'x-rapidapi-key: ' . $apiKey,
+        ],
+    ]);
+
+    $raw = curl_exec($ch);
+    $http = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    if ($raw === false) {
+        throw new RuntimeException('cURL error: ' . curl_error($ch));
+    }
+
+    $data = json_decode($raw, true);
+    if (!is_array($data)) {
+        throw new RuntimeException("Invalid JSON. First 800 bytes:\n" . substr((string) $raw, 0, 800));
+    }
+    if ($http < 200 || $http >= 300) {
+        throw new RuntimeException("RapidAPI error HTTP {$http}:\n" . json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    }
+
+    return $data;
+}
+
+foreach ($locations as $locationOrRid) {
+    script_flush('RapidAPI: ' . $locationOrRid . ' (sort=newest, page=' . $page . ')');
+    try {
+        $data = rapidapi_fetch_sale($rapidApiHost, $rapidApiPath, $rapidApiKey, [
+            'location_or_rid' => $locationOrRid,
+            'property_types' => 'house',
+            'sort' => 'newest',
+            'page' => (string) $page,
+            'doz' => '7',
+        ]);
+    } catch (Throwable $e) {
+        script_flush($e->getMessage());
+        continue;
+    }
+
+    $listings = rapidapi_listings_from_response($data, $maxResults);
+    if ($listings === []) {
+        script_flush('No listings parsed for ' . $locationOrRid);
+        continue;
+    }
+
+    script_flush('Saving ' . count($listings) . ' listing(s) for ' . $locationOrRid);
+    rapidapi_upsert_listings_db($pdo, $listings, $locationOrRid);
+}

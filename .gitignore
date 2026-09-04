@@ -1,12 +1,11 @@
 db.credentials.php
-cron/.tiktok_oauth_pkce/
-cron/.tiktok_tokens.json
-cron/.tiktok_tokens.sandbox.json
 vendor/
 credentials.json
 cron/listings_backup.json
 cron/addresses_from_apify.json
 cron/addresses_from_rapidapi.json
 cron/*.backup.json
-video_upload.credentials.php
 videos/**/*.mp4
+tmp/
+yhome_ai/
+bin/yt-dlp
