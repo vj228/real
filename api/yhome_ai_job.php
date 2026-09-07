@@ -31,11 +31,23 @@ if (!is_dir($selectedDir)) {
 }
 
 $metaPath = $workDir . '/meta.json';
+$analysisPath = $workDir . '/analysis.json';
+$analysis = null;
+if (is_readable($analysisPath)) {
+    $tmp = json_decode((string) file_get_contents($analysisPath), true);
+    if (is_array($tmp) && !empty($tmp['rooms'])) {
+        $analysis = $tmp;
+    }
+}
+
 if (is_readable($metaPath)) {
     $meta = json_decode((string) file_get_contents($metaPath), true);
     if (is_array($meta) && !empty($meta['frames'])) {
         $meta['ok'] = true;
         $meta['job_id'] = $id;
+        if ($analysis !== null) {
+            $meta['analysis'] = $analysis;
+        }
         job_out($meta);
     }
 }
@@ -87,4 +99,5 @@ job_out([
     'duration_sec' => $duration,
     'selected_count' => count($frames),
     'frames' => $frames,
+    'analysis' => $analysis,
 ]);

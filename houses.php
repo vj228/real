@@ -12,9 +12,10 @@ if ($pdo === null) {
 }
 
 $rows = $pdo->query(
-    'SELECT zpid, address, list_price, beds, baths, sqft, search_query, img_src, detail_url, created_at
-     FROM zillow_sale_listings
-     ORDER BY created_at DESC'
+    'SELECT l.id, l.zpid, l.address, l.list_price, l.beds, l.baths, l.sqft, l.search_query, l.img_src, l.detail_url, l.created_at,
+            (SELECT a.id FROM ai_analyses a WHERE a.listing_id = l.id ORDER BY a.analyzed_at DESC, a.id DESC LIMIT 1) AS analysis_id
+     FROM zillow_sale_listings l
+     ORDER BY l.created_at DESC'
 )->fetchAll(PDO::FETCH_ASSOC);
 
 function h(?string $s): string
@@ -45,6 +46,11 @@ function money($n): string
         .price { font-weight: 700; font-size: 1.1rem; margin: 0 0 4px; }
         .addr { margin: 0 0 6px; font-size: .95rem; }
         .meta { margin: 0; color: #666; font-size: .85rem; }
+        .badge {
+            display: inline-block; margin-top: 8px; padding: 3px 8px;
+            border-radius: 999px; background: #ebf8f1; color: #176948;
+            font-size: .75rem; font-weight: 700;
+        }
         a { color: inherit; text-decoration: none; }
         a:hover .addr { text-decoration: underline; }
     </style>
@@ -56,13 +62,14 @@ function money($n): string
     <div class="grid">
         <?php foreach ($rows as $r): ?>
             <?php
-            $href = !empty($r['detail_url']) ? (string) $r['detail_url'] : '#';
+            $href = '/house.php?id=' . (int) $r['id'];
             $img = !empty($r['img_src']) ? (string) $r['img_src'] : '';
             $beds = $r['beds'] !== null ? (string) (float) $r['beds'] : '—';
             $baths = $r['baths'] !== null ? (string) (float) $r['baths'] : '—';
             $sqft = $r['sqft'] !== null ? number_format((int) $r['sqft']) : '—';
+            $hasEstimate = !empty($r['analysis_id']);
             ?>
-            <a class="card" href="<?= h($href) ?>" target="_blank" rel="noopener">
+            <a class="card" href="<?= h($href) ?>">
                 <?php if ($img !== ''): ?>
                     <img src="<?= h($img) ?>" alt="">
                 <?php else: ?>
@@ -72,6 +79,9 @@ function money($n): string
                     <p class="price"><?= h(money($r['list_price'])) ?></p>
                     <p class="addr"><?= h((string) $r['address']) ?></p>
                     <p class="meta"><?= h($beds) ?> bed · <?= h($baths) ?> bath · <?= h($sqft) ?> sqft · <?= h((string) $r['search_query']) ?></p>
+                    <?php if ($hasEstimate): ?>
+                        <span class="badge">Estimate ready</span>
+                    <?php endif; ?>
                 </div>
             </a>
         <?php endforeach; ?>
