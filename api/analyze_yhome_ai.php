@@ -24,6 +24,7 @@ const YAI_OUTDOOR_REJECT = 0.42;
 const YAI_PRIORITIES = ['required', 'recommended', 'optional'];
 
 require_once dirname(__DIR__) . '/config/renovation_pricing.php';
+require_once dirname(__DIR__) . '/config/job_frames_sync.php';
 
 function yai_out(array $payload, int $code = 200): void
 {
@@ -1510,5 +1511,17 @@ file_put_contents(
     YAI_ROOT . '/' . $id . '/analysis.json',
     json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
 );
+
+$push = yai_push_job_frames_to_public($id, YAI_ROOT);
+$result['prod_frames_sync'] = $push;
+if (!empty($push['skipped'])) {
+    $log[] = 'Frame sync skipped (already on public host).';
+} elseif (!empty($push['ok'])) {
+    $log[] = 'Uploaded ' . (int) ($push['uploaded'] ?? 0)
+        . ' selected frames to ' . yai_public_base_url() . '.';
+} else {
+    $log[] = 'Frame upload to production failed: ' . (string) ($push['error'] ?? 'unknown');
+}
+$result['log'] = $log;
 
 yai_out($result);

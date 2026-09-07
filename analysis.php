@@ -62,6 +62,12 @@ declare(strict_types=1);
         }
         button:hover:not(:disabled) { background: var(--accent-hover); }
         button:disabled { opacity: 0.55; cursor: not-allowed; }
+        button.secondary {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+        button.secondary:hover:not(:disabled) { background: rgba(0,0,0,0.04); }
         .status {
             margin-top: 16px;
             padding: 12px 14px;
@@ -264,6 +270,7 @@ declare(strict_types=1);
     <div class="meta" id="meta"></div>
     <div class="actions" id="actions">
         <button type="button" id="analyzeBtn">Analyze renovation</button>
+        <button type="button" id="pushFramesBtn" class="secondary">Push frames to prod</button>
         <div class="analyze-log" id="analyzeLog" role="status" aria-live="polite"></div>
     </div>
     <div class="estimate panel" id="estimate"></div>
@@ -281,6 +288,7 @@ declare(strict_types=1);
     const urlInput = document.getElementById('url');
     const btn = document.getElementById('btn');
     const analyzeBtn = document.getElementById('analyzeBtn');
+    const pushFramesBtn = document.getElementById('pushFramesBtn');
     const status = document.getElementById('status');
     const listingEl = document.getElementById('listing');
     const queueEl = document.getElementById('queue');
@@ -772,6 +780,14 @@ declare(strict_types=1);
                 + (data.analysis_db_id ? ' (ai_analyses id=' + data.analysis_db_id + ')' : '')
                 + ' using ' + (data.images_used || '?') + ' frames.');
             setAnalyzeLog('ok', formatGeminiLog(data));
+            const sync = data.prod_frames_sync || null;
+            if (sync && sync.skipped) {
+                setStatus('ok', status.textContent + ' Frames already on this host.');
+            } else if (sync && sync.ok) {
+                setStatus('ok', status.textContent + ' Pushed ' + (sync.uploaded || 0) + ' frames to prod.');
+            } else if (sync && sync.error) {
+                setStatus('error', 'Analysis saved, but frame upload failed: ' + sync.error);
+            }
             renderAnalysis(data);
             activeSubmissionId = null;
             activeSubmissionEmail = '';
@@ -786,6 +802,31 @@ declare(strict_types=1);
             }
         } finally {
             analyzeBtn.disabled = false;
+        }
+    });
+
+    pushFramesBtn.addEventListener('click', async function () {
+        if (!currentJobId) return;
+        pushFramesBtn.disabled = true;
+        setStatus('loading', 'Uploading selected frames to production…');
+        try {
+            const res = await fetch('/api/push_job_frames.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ id: currentJobId }),
+            });
+            const data = await res.json().catch(function () {
+                return { ok: false, error: 'Invalid server response (HTTP ' + res.status + ')' };
+            });
+            if (!res.ok || !data.ok) {
+                throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
+            }
+            const sync = data.prod_frames_sync || {};
+            setStatus('ok', 'Pushed ' + (sync.uploaded || 0) + ' frames to production for job ' + currentJobId + '.');
+        } catch (err) {
+            setStatus('error', err.message || String(err));
+        } finally {
+            pushFramesBtn.disabled = false;
         }
     });
 

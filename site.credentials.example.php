@@ -7,4 +7,6 @@ declare(strict_types=1);
  */
 return [
     'public_base_url' => 'https://yhome.pro',
+    // Must match production so local analyze can upload frames.
+    'sync_key' => 'change-me-to-a-long-random-string',
 ];
