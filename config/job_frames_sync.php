@@ -91,71 +91,90 @@ function yai_push_job_frames_to_public(string $jobId, string $workRoot): array
         return ['ok' => false, 'error' => 'No selected frame files to upload'];
     }
 
-    $url = yai_public_base_url() . '/api/sync_job_frames.php';
-    $post = [
-        'key' => $key,
-        'job_id' => $jobId,
-    ];
-    $i = 0;
+    $valid = [];
     foreach ($files as $path) {
         $base = basename($path);
-        if (!preg_match('/^t\d{5}\.jpg$/', $base)) {
-            continue;
+        if (preg_match('/^t\d{5}\.jpg$/', $base)) {
+            $valid[] = ['path' => $path, 'name' => $base];
         }
-        $post['frames[' . $i . ']'] = new CURLFile($path, 'image/jpeg', $base);
-        $post['names[' . $i . ']'] = $base;
-        $i++;
     }
-    if ($i === 0) {
+    if ($valid === []) {
         return ['ok' => false, 'error' => 'No valid frame filenames'];
     }
 
+    // PHP default max_file_uploads is 20 — send in batches.
+    $batchSize = 15;
+    $batches = array_chunk($valid, $batchSize);
+    $url = yai_public_base_url() . '/api/sync_job_frames.php';
+    $totalUploaded = 0;
+    $lastHttp = 0;
+    $lastDecoded = null;
+
     $jobDir = rtrim($workRoot, '/') . '/' . $jobId;
+    $meta = [];
     foreach (['job.json', 'analysis.json'] as $metaName) {
         $metaPath = $jobDir . '/' . $metaName;
         if (is_readable($metaPath) && filesize($metaPath) < 2_000_000) {
-            $post['meta_' . pathinfo($metaName, PATHINFO_FILENAME)] = (string) file_get_contents($metaPath);
+            $meta['meta_' . pathinfo($metaName, PATHINFO_FILENAME)] = (string) file_get_contents($metaPath);
         }
     }
 
-    $ch = curl_init($url);
-    if ($ch === false) {
-        return ['ok' => false, 'error' => 'curl_init failed'];
-    }
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $post,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 180,
-        CURLOPT_CONNECTTIMEOUT => 20,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTPHEADER => ['Accept: application/json'],
-    ]);
-    $raw = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $err = curl_error($ch);
-    $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    foreach ($batches as $batchIndex => $batch) {
+        $post = [
+            'key' => $key,
+            'job_id' => $jobId,
+        ];
+        if ($batchIndex === 0) {
+            foreach ($meta as $k => $v) {
+                $post[$k] = $v;
+            }
+        }
+        foreach ($batch as $i => $row) {
+            $post['frames[' . $i . ']'] = new CURLFile($row['path'], 'image/jpeg', $row['name']);
+            $post['names[' . $i . ']'] = $row['name'];
+        }
 
-    if ($errno !== 0) {
-        return ['ok' => false, 'error' => 'Upload curl error: ' . $err, 'http' => $http];
-    }
-    $decoded = json_decode((string) $raw, true);
-    if ($http < 200 || $http >= 300) {
-        $msg = is_array($decoded) ? (string) ($decoded['error'] ?? $raw) : (string) $raw;
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return ['ok' => false, 'error' => 'curl_init failed', 'uploaded' => $totalUploaded];
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $post,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 180,
+            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        ]);
+        $raw = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $err = curl_error($ch);
+        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $lastHttp = $http;
 
-        return ['ok' => false, 'error' => 'Upload HTTP ' . $http . ': ' . $msg, 'http' => $http, 'response' => $decoded];
-    }
-    if (!is_array($decoded) || empty($decoded['ok'])) {
-        $msg = is_array($decoded) ? (string) ($decoded['error'] ?? 'bad response') : 'non-JSON response';
+        if ($errno !== 0) {
+            return ['ok' => false, 'error' => 'Upload curl error: ' . $err, 'http' => $http, 'uploaded' => $totalUploaded];
+        }
+        $decoded = json_decode((string) $raw, true);
+        $lastDecoded = $decoded;
+        if ($http < 200 || $http >= 300) {
+            $msg = is_array($decoded) ? (string) ($decoded['error'] ?? $raw) : (string) $raw;
 
-        return ['ok' => false, 'error' => $msg, 'http' => $http, 'response' => $decoded];
+            return ['ok' => false, 'error' => 'Upload HTTP ' . $http . ': ' . $msg, 'http' => $http, 'uploaded' => $totalUploaded, 'response' => $decoded];
+        }
+        if (!is_array($decoded) || empty($decoded['ok'])) {
+            $msg = is_array($decoded) ? (string) ($decoded['error'] ?? 'bad response') : 'non-JSON response';
+
+            return ['ok' => false, 'error' => $msg, 'http' => $http, 'uploaded' => $totalUploaded, 'response' => $decoded];
+        }
+        $totalUploaded += (int) ($decoded['uploaded'] ?? count($batch));
     }
 
     return [
         'ok' => true,
-        'uploaded' => (int) ($decoded['uploaded'] ?? $i),
-        'http' => $http,
-        'response' => $decoded,
+        'uploaded' => $totalUploaded,
+        'http' => $lastHttp,
+        'response' => $lastDecoded,
     ];
 }
