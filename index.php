@@ -7,228 +7,500 @@ require_once __DIR__ . '/helpers/marketing_track.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yHome - Know the real cost and risk before you offer</title>
+    <title>yHome — Know the renovation cost before you make an offer</title>
+    <meta name="description" content="Upload a house walkthrough video and get an AI-powered renovation cost estimate from yHome before you make an offer.">
     <link rel="stylesheet" href="/style.css">
+    <style>
+        .home-page {
+            padding-bottom: 48px;
+        }
+
+        .home-hero {
+            padding: 0 0 72px;
+            background:
+                radial-gradient(ellipse 110% 80% at 0% 0%, rgba(46, 157, 120, 0.12), transparent 52%),
+                radial-gradient(ellipse 80% 60% at 100% 10%, rgba(200, 167, 107, 0.1), transparent 48%),
+                linear-gradient(180deg, #ffffff 0%, #f7fbf8 70%, #edf6f1 100%);
+        }
+
+        .home-hero__inner {
+            padding-top: 24px;
+        }
+
+        .home-hero__grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 36px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        @media (min-width: 900px) {
+            .home-hero__grid {
+                grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+                gap: 48px;
+            }
+        }
+
+        .home-hero__copy {
+            max-width: 38rem;
+            padding-top: 4px;
+        }
+
+        .home-hero__visual {
+            min-width: 0;
+        }
+
+        .home-hero__visual img {
+            display: block;
+            width: 100%;
+            height: clamp(240px, 42vw, 460px);
+            object-fit: cover;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        @media (min-width: 900px) {
+            .home-hero__visual img {
+                height: min(520px, 58vh);
+            }
+        }
+
+        .home-hero__title {
+            margin: 0 0 16px;
+            font-size: clamp(2rem, 5vw, 3.1rem);
+            line-height: 1.12;
+            letter-spacing: -0.04em;
+            font-weight: 800;
+        }
+
+        .home-hero__sub {
+            margin: 0 0 28px;
+            font-size: clamp(1.05rem, 2.2vw, 1.2rem);
+            color: var(--muted);
+            line-height: 1.55;
+            max-width: 34rem;
+        }
+
+        .home-hero__actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        .home-hero__actions .button {
+            border-radius: 999px;
+            padding: 18px 32px;
+            font-size: 1.08rem;
+            font-weight: 800;
+            min-height: 56px;
+            box-shadow: 0 16px 32px rgba(46, 157, 120, 0.28);
+        }
+
+        .home-section {
+            padding: 72px 0;
+        }
+
+        .home-section--soft {
+            background: linear-gradient(180deg, #f7fbf8 0%, #edf6f1 100%);
+        }
+
+        .home-section__inner {
+            max-width: 40rem;
+        }
+
+        .home-section__inner--wide {
+            max-width: 52rem;
+        }
+
+        .home-value {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 32px;
+            align-items: center;
+        }
+
+        @media (min-width: 860px) {
+            .home-value {
+                grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+                gap: 48px;
+            }
+        }
+
+        .home-value__copy h2 {
+            margin: 0 0 16px;
+            font-size: clamp(1.75rem, 3.6vw, 2.4rem);
+            line-height: 1.15;
+            letter-spacing: -0.035em;
+            font-weight: 800;
+        }
+
+        .home-value__copy .lead {
+            margin: 0;
+            font-size: clamp(1.02rem, 2vw, 1.12rem);
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .home-value__media img {
+            display: block;
+            width: 100%;
+            height: clamp(220px, 36vw, 360px);
+            object-fit: cover;
+        }
+
+        .home-rooms {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 28px;
+        }
+
+        .home-rooms img {
+            display: block;
+            width: 100%;
+            height: clamp(88px, 16vw, 140px);
+            object-fit: cover;
+        }
+
+        .home-kicker {
+            margin: 0 0 12px;
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent-dark);
+        }
+
+        .home-section h2 {
+            margin: 0 0 16px;
+            font-size: clamp(1.75rem, 3.6vw, 2.4rem);
+            line-height: 1.15;
+            letter-spacing: -0.035em;
+            font-weight: 800;
+        }
+
+        .home-section p.lead {
+            margin: 0;
+            font-size: clamp(1.02rem, 2vw, 1.12rem);
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .home-steps {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 28px;
+            margin-top: 40px;
+        }
+
+        @media (min-width: 760px) {
+            .home-steps {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 32px;
+            }
+        }
+
+        .home-step {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .home-step__visual {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
+            background: var(--surface-strong);
+            border: none;
+            border-radius: 0;
+            padding: 0;
+        }
+
+        .home-step__visual img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .home-step__num {
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--accent-dark);
+        }
+
+        .home-step h3 {
+            margin: 0;
+            font-size: 1.2rem;
+            letter-spacing: -0.02em;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+
+        .home-example {
+            margin-top: 36px;
+            max-width: 28rem;
+            display: grid;
+            gap: 0;
+        }
+
+        .home-example__row {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 1.02rem;
+        }
+
+        .home-example__row:first-child {
+            border-top: 1px solid var(--border);
+        }
+
+        .home-example__row dt {
+            margin: 0;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .home-example__row dd {
+            margin: 0;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .home-example__row--total {
+            border-bottom: none;
+            padding-top: 18px;
+        }
+
+        .home-example__row--total dt,
+        .home-example__row--total dd {
+            color: var(--text);
+            font-size: 1.12rem;
+        }
+
+        .home-example__note {
+            margin: 14px 0 0;
+            font-size: 0.88rem;
+            color: var(--muted);
+        }
+
+        .home-final {
+            text-align: left;
+            max-width: 36rem;
+        }
+
+        .home-final .button {
+            margin-top: 24px;
+            border-radius: 999px;
+            padding: 18px 32px;
+            font-size: 1.05rem;
+            font-weight: 800;
+            box-shadow: 0 14px 28px rgba(46, 157, 120, 0.25);
+        }
+
+        .home-disclaimer {
+            padding: 0 0 40px;
+        }
+
+        .home-disclaimer p {
+            margin: 0 auto;
+            max-width: 40rem;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.86rem;
+            line-height: 1.55;
+        }
+
+        .home-footer-links {
+            margin-top: 18px;
+            text-align: center;
+            font-size: 0.86rem;
+        }
+
+        .home-footer-links a {
+            color: var(--muted);
+            text-decoration: none;
+            margin: 0 10px;
+        }
+
+        .home-footer-links a:hover {
+            color: var(--accent-dark);
+        }
+
+        .home-reveal {
+            animation: homeFadeUp 0.7s ease both;
+        }
+
+        .home-reveal--2 { animation-delay: 0.08s; }
+        .home-reveal--3 { animation-delay: 0.16s; }
+
+        @keyframes homeFadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .home-reveal {
+                animation: none;
+            }
+        }
+    </style>
 </head>
 <body>
-<main>
-    <section class="hero hero-medvi">
-        <div class="container hero-medvi__shell">
+<main class="home-page">
+    <section class="home-hero">
+        <div class="container home-hero__inner">
             <header class="site-header">
                 <a class="site-logo" href="/">yHome</a>
                 <div class="site-header-actions">
-                    <a href="/intake.php" class="button button-nav-cta" data-cta-id="nav_check_cost_risk">Check Cost & Risk</a>
+                    <a href="/houses.php" class="button button-nav-cta" data-cta-id="nav_upload_walkthrough">Upload Walkthrough</a>
                 </div>
             </header>
 
-            <div class="hero-medvi__grid">
-                <div class="hero-medvi__copy">
-                    <p class="hero-eyebrow">For homebuyers making a serious decision</p>
-                    <h1 class="hero-medvi__title">Don’t overpay for your home. Know the <span class="hero-highlight">real cost and risk</span> before you make an offer.</h1>
-                    <ul class="hero-checklist">
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Know your real monthly cost</strong></li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Spot hidden risks before you fall in love</strong></li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Avoid expensive mistakes most buyers miss</strong></li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Get a clear buy / wait signal</strong></li>
-                        <li><span class="hero-checklist__mark" aria-hidden="true"></span><strong>Works with Zillow, Redfin, or any property address</strong></li>
-                    </ul>
-                    <a href="/intake.php" class="button button-primary button-hero-cta" data-cta-id="hero_check_before_offer">Check Before You Offer</a>
-                    <p class="trust-copy hero-medvi__trust">Free • No credit check • No signup required</p>
-                </div>
-
-                <div class="hero-medvi__aside">
-                    <p class="hero-subheadline">Paste the address and get a clear breakdown of the true monthly cost, financial pressure, and whether this home is a smart decision for you — in under 60 seconds.</p>
-                </div>
-
-                <div class="hero-medvi__visual">
-                    <div class="hero-collage">
-                        <img class="hero-collage__img hero-collage__img--1" src="https://images.pexels.com/photos/8292850/pexels-photo-8292850.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Homebuyer couple reviewing purchase paperwork" width="600" height="720" decoding="async">
-                        <img class="hero-collage__img hero-collage__img--2" src="https://images.pexels.com/photos/106399/pexels-photo-106399.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Modern house exterior in daylight" width="600" height="720" decoding="async">
-                        <img class="hero-collage__img hero-collage__img--3" src="https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Modern home exterior with landscaping" width="600" height="720" decoding="async">
-                        <img class="hero-collage__img hero-collage__img--4" src="https://images.pexels.com/photos/8293779/pexels-photo-8293779.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Real estate agent showing options to buyers" width="600" height="720" decoding="async">
-                        <img class="hero-collage__img hero-collage__img--5" src="https://images.pexels.com/photos/323775/pexels-photo-323775.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Beautiful home exterior with clean landscaping" width="600" height="720" decoding="async">
+            <div class="home-hero__grid">
+                <div class="home-hero__copy">
+                    <h1 class="home-hero__title home-reveal">Know the renovation cost before you make an offer.</h1>
+                    <p class="home-hero__sub home-reveal home-reveal--2">Upload a house walkthrough video and get an AI-powered renovation cost estimate.</p>
+                    <div class="home-hero__actions home-reveal home-reveal--3">
+                        <a href="/houses.php" class="button button-primary" data-cta-id="hero_upload_walkthrough">Upload Walkthrough</a>
                     </div>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Hidden for now
-    <section class="section">
-        <div class="container">
-            <div class="featured-strip">
-                <span class="featured-label">Check a real property first, then see if the numbers make sense</span>
-                <div class="featured-items">
-                    <span>Monthly cost clarity</span>
-                    <span>Decision confidence</span>
-                    <span>Risk signals</span>
-                    <span>Instant next steps</span>
-                </div>
-            </div>
-        </div>
-    </section>
-    -->
-
-    <!-- Hidden for now
-    <section class="section section-tight">
-        <div class="container">
-            <div class="stats-grid">
-                <article class="stat-card">
-                    <strong>Real monthly cost</strong>
-                    <span>See a fuller number that includes mortgage, taxes, and insurance.</span>
-                </article>
-                <article class="stat-card">
-                    <strong>Spot hidden pressure</strong>
-                    <span>Find out when a home may stretch your budget more than it first appears.</span>
-                </article>
-                <article class="stat-card">
-                    <strong>Make a smarter call</strong>
-                    <span>Know if this home looks safe to buy, borderline, or high risk for your situation.</span>
-                </article>
-            </div>
-        </div>
-    </section>
-    -->
-
-    <!-- Hidden for now
-    <section class="section">
-        <div class="container">
-            <div class="section-intro">
-                <span class="section-label">Why this matters</span>
-                <h2>Most Buyers Miss The Real Cost Of A Specific Home</h2>
-                <p>Listing price is only part of the story. What matters is what this home could actually cost you month to month, and whether that fits your life.</p>
-            </div>
-
-            <div class="benefit-grid">
-                <article class="info-card">
-                    <h3>Mortgage is not the full number</h3>
-                    <p>Taxes, insurance, and upkeep can change how affordable a home really feels.</p>
-                </article>
-                <article class="info-card">
-                    <h3>Risk shows up later</h3>
-                    <p>Low cash reserves or higher debt can make a home look fine on paper but tight in real life.</p>
-                </article>
-                <article class="info-card">
-                    <h3>Emotion can distort judgment</h3>
-                    <p>It is easy to fall in love with a home before you know whether it is actually a smart decision.</p>
-                </article>
-                <article class="info-card">
-                    <h3>Clarity comes first</h3>
-                    <p>You deserve to see the numbers clearly before you move forward with an offer or a lender.</p>
-                </article>
-            </div>
-        </div>
-    </section>
-    -->
-
-    <section class="section section-soft">
-        <div class="container">
-            <div class="section-intro">
-                <span class="section-label1">How it works</span>
-                    <h2>A clear decision report before you commit to a home</h2>
-                    <p>In about a minute, you’ll see what this purchase could mean for your budget and whether it may create unnecessary financial pressure.</p>
-            </div>
-
-            <div class="steps-grid">
-                <article class="step-card">
-                    <span class="step-number">1</span>
-                    <h3>Enter the property address</h3>
-                    <p>Start with the exact home you’re considering.</p>
-                </article>
-                <article class="step-card">
-                    <span class="step-number">2</span>
-                    <h3>Share your financial details</h3>
-                    <p>Income, debt, down payment, and credit range.</p>
-                </article>
-                <article class="step-card">
-                    <span class="step-number">3</span>
-                    <h3>Get a confident next-step signal</h3>
-                    <p>See if this home looks manageable, tight, or risky before you move forward.</p>
-                </article>
-            </div>
-            <div class="section-cta-row">
-                <a href="/intake.php" class="button button-primary" data-cta-id="section_how_it_works_check">Check Before You Offer</a>
-            </div>
-        </div>
-    </section>
-
-
-
-    <section class="section">
-        <div class="container">
-            <div class="trust-section">
-                <div class="social-proof">
-                    <h2>Designed to help you buy with confidence, not guesswork</h2>
-                    <p>yHome helps you understand affordability, financial pressure, and risk before an offer so you can protect your budget and avoid costly surprises.</p>
-                    <p class="social-proof-note">Built to guide serious buyers through high-stakes decisions with more clarity.</p>
-                    <a href="/intake.php" class="button button-primary social-proof-cta" data-cta-id="section_social_proof_check">Check Before You Offer</a>
-                </div>
-                <div class="trust-card">
+                <div class="home-hero__visual home-reveal home-reveal--2">
                     <img
-                        class="trust-image"
-                        src="https://images.pexels.com/photos/7647222/pexels-photo-7647222.jpeg?auto=compress&cs=tinysrgb&w=1200"
-                        alt="A homebuyer couple reviewing documents with a trusted real estate professional"
+                        src="https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg?auto=compress&cs=tinysrgb&w=1400"
+                        alt="Bright living room from a home walkthrough"
+                        width="1400"
+                        height="1050"
+                        decoding="async"
+                        fetchpriority="high"
                     >
-                    <div class="trust-card-copy">
-                        <span class="section-label">See the full picture</span>
-                        <h3>Find out if this home looks safe, borderline, or high risk.</h3>
-                        <p>When you understand the true monthly cost and the pressure points in advance, it becomes much easier to make a smart call.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="home-section">
+        <div class="container">
+            <div class="home-value">
+                <div class="home-value__copy">
+                    <p class="home-kicker">Why it matters</p>
+                    <h2>See the real cost of the home.</h2>
+                    <p class="lead">The asking price is only part of the cost. yhome helps you estimate potential kitchen, bathroom, flooring, paint, and other renovation expenses before you decide what to offer.</p>
+                    <div class="home-rooms" aria-hidden="true">
+                        <img src="https://images.pexels.com/photos/2724749/pexels-photo-2724749.jpeg?auto=compress&cs=tinysrgb&w=700" alt="" width="700" height="525" loading="lazy" decoding="async">
+                        <img src="https://images.pexels.com/photos/1457842/pexels-photo-1457842.jpeg?auto=compress&cs=tinysrgb&w=700" alt="" width="700" height="525" loading="lazy" decoding="async">
+                        <img src="https://images.pexels.com/photos/1454804/pexels-photo-1454804.jpeg?auto=compress&cs=tinysrgb&w=700" alt="" width="700" height="525" loading="lazy" decoding="async">
                     </div>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="section">
-        <div class="container">
-            <div class="faq-shell">
-                <div class="section-intro">
-                    <span class="section-label">What you will learn</span>
-                    <h2>Answers to the three questions that matter most</h2>
-                </div>
-                <div class="faq-grid">
-                    <article class="faq-card">
-                        <h3>Can I truly afford this home?</h3>
-                        <p>See your full monthly housing cost, not just a mortgage estimate.</p>
-                    </article>
-                    <article class="faq-card">
-                        <h3>Will this create financial stress?</h3>
-                        <p>Understand whether this payment level could strain your month-to-month flexibility.</p>
-                    </article>
-                    <article class="faq-card">
-                        <h3>Am I about to make a costly mistake?</h3>
-                        <p>Get a clear signal on whether to move forward now or reconsider before you commit.</p>
-                    </article>
-                </div>
-                <div class="section-cta-row">
-                    <a href="/intake.php" class="button button-primary" data-cta-id="section_faq_check">Check Before You Offer</a>
+                <div class="home-value__media">
+                    <img
+                        src="https://images.pexels.com/photos/1080721/pexels-photo-1080721.jpeg?auto=compress&cs=tinysrgb&w=1200"
+                        alt="Kitchen interior that may need renovation"
+                        width="1200"
+                        height="900"
+                        loading="lazy"
+                        decoding="async"
+                    >
                 </div>
             </div>
         </div>
     </section>
 
-    <section class="section">
+    <section class="home-section home-section--soft" id="how-it-works">
         <div class="container">
-            <div class="final-cta">
-                <div>
-                    <span class="section-label">Before you move forward</span>
-                    <h2>Review this home with confidence before making your next move.</h2>
-                    <p class="trust-copy">Free • No credit check • No signup required</p>
+            <div class="home-section__inner home-section__inner--wide">
+                <p class="home-kicker">How it works</p>
+                <h2>Three simple steps</h2>
+                <div class="home-steps">
+                    <article class="home-step">
+                        <div class="home-step__visual">
+                            <img src="https://images.pexels.com/photos/8293778/pexels-photo-8293778.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Recording a home tour on a phone" width="900" height="675" loading="lazy" decoding="async">
+                        </div>
+                        <span class="home-step__num">Step 1</span>
+                        <h3>Record the home</h3>
+                    </article>
+                    <article class="home-step">
+                        <div class="home-step__visual">
+                            <img src="https://images.pexels.com/photos/4050315/pexels-photo-4050315.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Uploading a walkthrough video" width="900" height="675" loading="lazy" decoding="async">
+                        </div>
+                        <span class="home-step__num">Step 2</span>
+                        <h3>Upload your walkthrough</h3>
+                    </article>
+                    <article class="home-step">
+                        <div class="home-step__visual">
+                            <img src="https://images.pexels.com/photos/8292886/pexels-photo-8292886.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Reviewing renovation costs before an offer" width="900" height="675" loading="lazy" decoding="async">
+                        </div>
+                        <span class="home-step__num">Step 3</span>
+                        <h3>Get your renovation estimate</h3>
+                    </article>
                 </div>
-                <a href="/intake.php" class="button button-primary" data-cta-id="section_final_cta_check">Check Before You Offer</a>
             </div>
         </div>
     </section>
 
-    <section class="section section-disclaimer">
+    <section class="home-section">
         <div class="container">
-            <p class="page-disclaimer">This is not a lender approval. Final costs depend on loan terms, taxes, insurance, and market conditions. This report is designed to help you make a more informed decision before moving forward.</p>
+            <div class="home-section__inner">
+                <p class="home-kicker">Example</p>
+                <h2>A $900K house may really be a $970K decision.</h2>
+                <dl class="home-example">
+                    <div class="home-example__row">
+                        <dt>Asking Price</dt>
+                        <dd>$900,000</dd>
+                    </div>
+                    <div class="home-example__row">
+                        <dt>Estimated Renovation</dt>
+                        <dd>$70,000</dd>
+                    </div>
+                    <div class="home-example__row home-example__row--total">
+                        <dt>Potential All-in Cost</dt>
+                        <dd>$970,000</dd>
+                    </div>
+                </dl>
+                <p class="home-example__note">Illustrative example only — not a real property listing.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="home-section home-section--soft" id="get-estimate">
+        <div class="container">
+            <div class="home-final">
+                <p class="home-kicker">Ready when you are</p>
+                <h2>Touring a home?</h2>
+                <p class="lead">Upload your walkthrough before you make an offer.</p>
+                <a href="/houses.php" class="button button-primary" data-cta-id="final_get_renovation_estimate">Get Renovation Estimate</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="home-disclaimer">
+        <div class="container">
+            <p>yHome provides preliminary AI estimates based on visible conditions in your walkthrough video. Estimates are not a substitute for a professional home inspection or contractor quote. Hidden issues and local pricing can differ substantially from what appears on camera.</p>
+            <nav class="home-footer-links" aria-label="Legal">
+                <a href="/privacy.php">Privacy</a>
+                <a href="/terms.php">Terms</a>
+            </nav>
         </div>
     </section>
 </main>
 
 <script>window.YHOME_MARKETING_VISIT_ID=<?= json_encode($GLOBALS['_marketing_visit_id'] ?? null) ?>;</script>
 <script src="/js/cta_track.js" defer></script>
-
 </body>
 </html>
