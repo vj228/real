@@ -864,7 +864,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
     <section class="house-hero">
         <div class="container" style="padding-top: 24px;">
             <header class="site-header">
-                <a class="site-logo" href="/">yHome</a>
+                <a class="site-logo" href="/">yHome.ai</a>
                 <div class="site-header-actions">
                     <a href="/houses.php" class="button button-nav-cta">All houses</a>
                 </div>

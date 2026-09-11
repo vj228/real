@@ -367,7 +367,7 @@ require_once __DIR__ . '/helpers/marketing_track.php';
     <section class="home-hero">
         <div class="container home-hero__inner">
             <header class="site-header">
-                <a class="site-logo" href="/">yHome</a>
+                <a class="site-logo" href="/">yHome.ai</a>
                 <div class="site-header-actions">
                     <a href="/houses.php" class="button button-nav-cta" data-cta-id="nav_upload_walkthrough">Upload Walkthrough</a>
                 </div>

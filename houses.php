@@ -138,7 +138,7 @@ function money($n): string
 <main class="houses-page">
     <div class="container">
         <header class="site-header">
-            <a class="site-logo" href="/">yHome</a>
+            <a class="site-logo" href="/">yHome.ai</a>
             <div class="site-header-actions">
                 <a href="/" class="button button-nav-cta">Home</a>
             </div>

@@ -17,7 +17,7 @@ $effectiveDate = 'May 18, 2026';
     <section class="section legal-page__section">
         <div class="container legal-page__container">
             <header class="legal-page__header">
-                <a class="site-logo" href="/">yHome</a>
+                <a class="site-logo" href="/">yHome.ai</a>
                 <nav class="legal-page__nav" aria-label="Legal">
                     <a href="/terms.php">Terms of Service</a>
                 </nav>

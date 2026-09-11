@@ -14,7 +14,7 @@ require_once __DIR__ . '/helpers/marketing_track.php';
 <main class="intake-page">
     <section class="intake-shell">
         <header class="intake-header">
-            <a class="site-logo" href="/" data-cta-id="intake_logo_home">yHome</a>
+            <a class="site-logo" href="/" data-cta-id="intake_logo_home">yHome.ai</a>
             <p class="intake-rating">Built for 500,000+ yHome Homebuyers</p>
         </header>
 
