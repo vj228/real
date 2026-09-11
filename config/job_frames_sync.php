@@ -25,7 +25,7 @@ function yai_site_config(): array
 function yai_public_base_url(): string
 {
     $cfg = yai_site_config();
-    $base = trim((string) ($cfg['public_base_url'] ?? 'https://yhome.pro'));
+    $base = trim((string) ($cfg['public_base_url'] ?? 'https://yhome.ai'));
 
     return rtrim($base, '/');
 }
@@ -43,7 +43,7 @@ function yai_job_id_ok(string $jobId): bool
 }
 
 /**
- * True when this request is not already on the public host (e.g. local → yhome.pro).
+ * True when this request is not already on the public host (e.g. local → yhome.ai).
  */
 function yai_should_push_frames_to_public(): bool
 {

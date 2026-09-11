@@ -9,7 +9,7 @@ $effectiveDate = 'May 18, 2026';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy — yHome</title>
-    <meta name="description" content="Privacy Policy for yHome (yhome.pro): what we collect, how we use it, and your choices.">
+    <meta name="description" content="Privacy Policy for yHome (yhome.ai): what we collect, how we use it, and your choices.">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -27,7 +27,7 @@ $effectiveDate = 'May 18, 2026';
                 <h1>Privacy Policy</h1>
                 <p class="legal-doc__meta">Effective date: <?= htmlspecialchars($effectiveDate, ENT_QUOTES, 'UTF-8') ?></p>
 
-                <p>This Privacy Policy explains how yHome (“we,” “us,” or “our”) collects, uses, and shares information when you visit <a href="https://yhome.pro">https://yhome.pro</a> or use our homebuying cost and risk tools (the “Service”).</p>
+                <p>This Privacy Policy explains how yHome (“we,” “us,” or “our”) collects, uses, and shares information when you visit <a href="https://yhome.ai">https://yhome.ai</a> or use our homebuying cost and risk tools (the “Service”).</p>
 
                 <h2>1. Information we collect</h2>
 
@@ -93,7 +93,7 @@ $effectiveDate = 'May 18, 2026';
 
                 <h2>7. Your choices and rights</h2>
                 <p>Depending on where you live, you may have rights to access, correct, delete, or restrict certain processing of your personal information, or to object to processing and receive a portable copy.</p>
-                <p>To make a request, contact <a href="mailto:privacy@yhome.pro">privacy@yhome.pro</a>. We may need to verify your identity before responding. You may also have the right to lodge a complaint with a supervisory authority in your region.</p>
+                <p>To make a request, contact <a href="mailto:privacy@yhome.ai">privacy@yhome.ai</a>. We may need to verify your identity before responding. You may also have the right to lodge a complaint with a supervisory authority in your region.</p>
                 <p>California residents may have additional rights under the CCPA/CPRA, including knowing what categories of personal information we collect and requesting deletion, subject to exceptions.</p>
 
                 <h2>8. Children’s privacy</h2>
@@ -109,8 +109,8 @@ $effectiveDate = 'May 18, 2026';
                 <p>We may update this Privacy Policy from time to time. We will post the revised version on this page and update the effective date. Material changes may be highlighted on the site where appropriate.</p>
 
                 <h2>12. Contact</h2>
-                <p>Privacy questions or requests: <a href="mailto:privacy@yhome.pro">privacy@yhome.pro</a></p>
-                <p>yHome — <a href="https://yhome.pro">https://yhome.pro</a></p>
+                <p>Privacy questions or requests: <a href="mailto:privacy@yhome.ai">privacy@yhome.ai</a></p>
+                <p>yHome — <a href="https://yhome.ai">https://yhome.ai</a></p>
             </article>
 
             <footer class="legal-page__footer">

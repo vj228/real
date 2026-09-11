@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Site URLs + frame sync. Optional override: site.credentials.php (gitignored).
  *
  * return [
- *   'public_base_url' => 'https://yhome.pro',
+ *   'public_base_url' => 'https://yhome.ai',
  *   'sync_key' => 'shared-secret-for-frame-upload',
  * ];
  *
@@ -15,7 +15,7 @@ declare(strict_types=1);
  */
 
 $defaults = [
-    'public_base_url' => 'https://yhome.pro',
+    'public_base_url' => 'https://yhome.ai',
     // Shared secret for api/sync_job_frames.php (override in site.credentials.php).
     'sync_key' => 'yh_frm_sync_9c4e2a71b8f0d3e6',
 ];

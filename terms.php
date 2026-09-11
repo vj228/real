@@ -9,7 +9,7 @@ $effectiveDate = 'May 18, 2026';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terms of Service — yHome</title>
-    <meta name="description" content="Terms of Service for yHome (yhome.pro), a homebuying cost and risk information tool.">
+    <meta name="description" content="Terms of Service for yHome (yhome.ai), a homebuying cost and risk information tool.">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -27,7 +27,7 @@ $effectiveDate = 'May 18, 2026';
                 <h1>Terms of Service</h1>
                 <p class="legal-doc__meta">Effective date: <?= htmlspecialchars($effectiveDate, ENT_QUOTES, 'UTF-8') ?></p>
 
-                <p>These Terms of Service (“Terms”) govern your access to and use of the yHome website and related services (collectively, the “Service”), operated at <a href="https://yhome.pro">https://yhome.pro</a> (“yHome,” “we,” “us,” or “our”). By using the Service, you agree to these Terms. If you do not agree, do not use the Service.</p>
+                <p>These Terms of Service (“Terms”) govern your access to and use of the yHome website and related services (collectively, the “Service”), operated at <a href="https://yhome.ai">https://yhome.ai</a> (“yHome,” “we,” “us,” or “our”). By using the Service, you agree to these Terms. If you do not agree, do not use the Service.</p>
 
                 <h2>1. What yHome provides</h2>
                 <p>yHome offers educational and informational tools to help prospective homebuyers understand estimated monthly housing costs, financial pressure, and general decision signals based on information you provide (such as property address, income, debts, and offer assumptions).</p>
@@ -82,7 +82,7 @@ $effectiveDate = 'May 18, 2026';
                 <p>These Terms are governed by the laws of the State of California, United States, without regard to conflict-of-law principles, except where mandatory consumer protections in your jurisdiction apply. Any dispute arising from these Terms or the Service will be brought in the state or federal courts located in California, unless applicable law requires otherwise.</p>
 
                 <h2>14. Contact</h2>
-                <p>Questions about these Terms may be sent to <a href="mailto:legal@yhome.pro">legal@yhome.pro</a> or through the contact options published on <a href="https://yhome.pro">yhome.pro</a>.</p>
+                <p>Questions about these Terms may be sent to <a href="mailto:legal@yhome.ai">legal@yhome.ai</a> or through the contact options published on <a href="https://yhome.ai">yhome.ai</a>.</p>
             </article>
 
             <footer class="legal-page__footer">

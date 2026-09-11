@@ -101,7 +101,7 @@ function yt_site_config(): array
 function yt_public_base_url(): string
 {
     $cfg = yt_site_config();
-    $base = trim((string) ($cfg['public_base_url'] ?? 'https://yhome.pro'));
+    $base = trim((string) ($cfg['public_base_url'] ?? 'https://yhome.ai'));
 
     return rtrim($base, '/');
 }
@@ -505,7 +505,7 @@ if ($submissionId > 0) {
         if ($rel !== '' && is_readable($abs)) {
             $submissionStoredAbs = $abs;
         } else {
-            // File lives on production (user uploaded on yhome.pro); pull it here.
+            // File lives on production (user uploaded on yhome.ai); pull it here.
             $remoteUrl = yt_public_base_url() . '/api/tour_file.php?id=' . $submissionId;
             $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
             if ($ext === '' && $rel !== '') {
