@@ -70,6 +70,8 @@ if (!$pdo instanceof PDO) {
     exit;
 }
 
+require_once __DIR__ . '/helpers/agent_referral.php';
+
 $stmt = $pdo->prepare(
     'SELECT id, address, detail_url, list_price, zestimate, price_vs_zestimate_pct,
             price_per_sqft, beds, baths, sqft, days_on_zillow, img_src, zpid, search_query
@@ -81,6 +83,22 @@ if (!$listing) {
     http_response_code(404);
     echo 'Listing not found.';
     exit;
+}
+
+$activeReferralCode = null;
+try {
+    $refParam = isset($_GET['ref']) ? (string) $_GET['ref'] : '';
+    $normalized = agent_ref_normalize($refParam);
+    if ($normalized !== null) {
+        $activeReferralCode = agent_ref_remember($normalized);
+        if ($activeReferralCode !== null) {
+            agent_ref_track_visit($pdo, $activeReferralCode, $id);
+        }
+    } else {
+        $activeReferralCode = agent_ref_current();
+    }
+} catch (Throwable $e) {
+    $activeReferralCode = agent_ref_current();
 }
 
 $aStmt = $pdo->prepare(
@@ -1200,6 +1218,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
 <script>
 (function () {
     const listingId = <?= (int) $id ?>;
+    const referralCode = <?= json_encode($activeReferralCode ?? '', JSON_UNESCAPED_SLASHES) ?>;
     const form = document.getElementById('video-form');
     const urlInput = document.getElementById('video-url');
     const emailInput = document.getElementById('contact-email');
@@ -1369,16 +1388,19 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                 fd.append('video', file);
                 fd.append('listing_id', String(listingId));
                 fd.append('email', email);
+                if (referralCode) fd.append('ref', referralCode);
                 res = await fetch('/api/tour_submit.php', {
                     method: 'POST',
                     headers: { 'Accept': 'application/json' },
                     body: fd,
                 });
             } else {
+                const payload = { url: url, listing_id: listingId, email: email };
+                if (referralCode) payload.ref = referralCode;
                 res = await fetch('/api/tour_submit.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ url: url, listing_id: listingId, email: email }),
+                    body: JSON.stringify(payload),
                 });
             }
             const data = await res.json().catch(function () {

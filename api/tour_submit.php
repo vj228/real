@@ -142,6 +142,13 @@ if ($hasUpload) {
     $youtubeUrl = 'https://www.youtube.com/watch?v=' . $ytId;
 }
 
+$refHint = null;
+if (is_array($body) && isset($body['ref'])) {
+    $refHint = (string) $body['ref'];
+} elseif (isset($_POST['ref'])) {
+    $refHint = (string) $_POST['ref'];
+}
+
 try {
     $stmt = $pdo->prepare(
         'INSERT INTO house_tour_submissions
@@ -160,6 +167,25 @@ try {
     $id = (int) $pdo->lastInsertId();
 } catch (Throwable $e) {
     ts_fail('Could not save submission: ' . $e->getMessage(), 500);
+}
+
+try {
+    require_once dirname(__DIR__) . '/helpers/agent_referral.php';
+    $attached = agent_ref_attach_tour($pdo, $listingId, $id, $refHint);
+    if (!empty($attached['referral_code'])) {
+        $upd = $pdo->prepare(
+            'UPDATE house_tour_submissions
+             SET referral_code = ?, agent_referral_id = ?
+             WHERE id = ?'
+        );
+        $upd->execute([
+            $attached['referral_code'],
+            $attached['referral_id'],
+            $id,
+        ]);
+    }
+} catch (Throwable $e) {
+    // Referral tables/columns optional until migrations are applied.
 }
 
 ts_out([
