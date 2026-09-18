@@ -82,7 +82,7 @@ $effectiveDate = 'May 18, 2026';
                 <p>These Terms are governed by the laws of the State of California, United States, without regard to conflict-of-law principles, except where mandatory consumer protections in your jurisdiction apply. Any dispute arising from these Terms or the Service will be brought in the state or federal courts located in California, unless applicable law requires otherwise.</p>
 
                 <h2>14. Contact</h2>
-                <p>Questions about these Terms may be sent to <a href="mailto:legal@yhome.ai">legal@yhome.ai</a> or through the contact options published on <a href="https://yhome.ai">yhome.ai</a>.</p>
+                <p>Questions about these Terms may be sent to <a href="mailto:hello@yhome.ai">hello@yhome.ai</a> or through the contact options published on <a href="https://yhome.ai">yhome.ai</a>.</p>
             </article>
 
             <footer class="legal-page__footer">
