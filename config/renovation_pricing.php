@@ -33,6 +33,7 @@ function renovation_pricing_defaults(): array
         'light_fixture_replace' => ['low' => 200, 'high' => 900, 'title' => 'Replace light fixtures'],
         'door_replace' => ['low' => 400, 'high' => 1500, 'title' => 'Replace door'],
         'closet_update' => ['low' => 800, 'high' => 3000, 'title' => 'Update closet'],
+        'window_replace' => ['low' => 1200, 'high' => 4500, 'title' => 'Replace windows'],
     ];
 }
 

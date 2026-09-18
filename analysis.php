@@ -259,20 +259,18 @@ declare(strict_types=1);
         <h2>User tour submissions</h2>
         <div id="queueList"></div>
     </div>
+    <div class="actions" id="actions">
+        <div class="analyze-log" id="analyzeLog" role="status" aria-live="polite"></div>
+    </div>
     <form class="panel" id="form" autocomplete="off">
-        <label for="url">YouTube video URL</label>
+        <label for="url">YouTube video URL (optional)</label>
         <div class="row">
             <input type="url" id="url" name="url" required placeholder="https://www.youtube.com/watch?v=..." inputmode="url">
-            <button type="submit" id="btn">Process Video</button>
+            <button type="submit" id="btn">Process</button>
         </div>
         <div class="status" id="status" role="status" aria-live="polite"></div>
     </form>
     <div class="meta" id="meta"></div>
-    <div class="actions" id="actions">
-        <button type="button" id="analyzeBtn">Analyze renovation</button>
-        <button type="button" id="pushFramesBtn" class="secondary">Push frames to prod</button>
-        <div class="analyze-log" id="analyzeLog" role="status" aria-live="polite"></div>
-    </div>
     <div class="estimate panel" id="estimate"></div>
     <div class="grid" id="grid"></div>
 </div>
@@ -287,8 +285,6 @@ declare(strict_types=1);
     const form = document.getElementById('form');
     const urlInput = document.getElementById('url');
     const btn = document.getElementById('btn');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const pushFramesBtn = document.getElementById('pushFramesBtn');
     const status = document.getElementById('status');
     const listingEl = document.getElementById('listing');
     const queueEl = document.getElementById('queue');
@@ -305,6 +301,8 @@ declare(strict_types=1);
     let currentListingId = null;
     let activeSubmissionId = null;
     let activeSubmissionEmail = '';
+    let analyzeBusy = false;
+    let availableFrameUrls = new Set();
 
     function setAnalyzeLog(kind, lines) {
         const text = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
@@ -313,6 +311,7 @@ declare(strict_types=1);
             analyzeLog.textContent = '';
             return;
         }
+        actions.className = 'actions show';
         analyzeLog.className = 'analyze-log show ' + (kind || '');
         analyzeLog.textContent = text;
         analyzeLog.scrollTop = analyzeLog.scrollHeight;
@@ -496,8 +495,13 @@ declare(strict_types=1);
         let blocks = '';
         a.rooms.forEach(function (r) {
             let imgs = '';
+            const seenUrls = new Set();
             (r.images || []).forEach(function (img) {
-                imgs += '<img src="' + img.url + '" alt="' + (r.room || '') + '" loading="lazy">';
+                const url = img && img.url ? String(img.url) : '';
+                if (!url || seenUrls.has(url)) return;
+                if (availableFrameUrls.size > 0 && !availableFrameUrls.has(url)) return;
+                seenUrls.add(url);
+                imgs += '<img src="' + url + '" alt="' + (r.room || '') + '" loading="lazy" onerror="this.remove()">';
             });
 
             if (!hasScores && r.condition) {
@@ -558,13 +562,16 @@ declare(strict_types=1);
 
     function renderFrames(frames) {
         grid.innerHTML = '';
+        availableFrameUrls = new Set();
         (frames || []).forEach(function (f) {
+            if (f && f.url) availableFrameUrls.add(f.url);
             const card = document.createElement('div');
             card.className = 'card';
             const img = document.createElement('img');
             img.src = f.url;
             img.alt = 'Frame at ' + formatSec(f.time_sec);
             img.loading = 'lazy';
+            img.onerror = function () { card.remove(); };
             const ts = document.createElement('div');
             ts.className = 'ts';
             ts.textContent = formatSec(f.time_sec);
@@ -582,6 +589,7 @@ declare(strict_types=1);
         renderListing(data.listing);
         loadQueue(currentListingId);
         const frames = Array.isArray(data.frames) ? data.frames : [];
+        renderFrames(frames);
         const a = data.analysis;
         if (a) {
             setStatus('ok', 'Loaded listing #' + currentListingId + ' from database'
@@ -601,8 +609,7 @@ declare(strict_types=1);
             estimate.className = 'estimate panel';
             estimate.innerHTML = '';
         }
-        actions.className = currentJobId ? 'actions show' : 'actions';
-        renderFrames(frames);
+        actions.className = 'actions';
         setListingUrl(currentListingId);
     }
 
@@ -636,7 +643,11 @@ declare(strict_types=1);
             const label = s.source === 'upload'
                 ? ('File · ' + (s.original_filename || 'video'))
                 : ('YouTube · ' + (s.youtube_url || ''));
-            const canProcess = s.status === 'pending' || s.status === 'failed';
+            const canProcess = s.status === 'pending' || s.status === 'failed' || s.status === 'processing';
+            const canAnalyze = !!(s.job_id && (s.status === 'processed' || s.status === 'analyzed' || s.status === 'processing'));
+            if (!currentJobId && s.job_id && canAnalyze) {
+                currentJobId = s.job_id;
+            }
             html += '<div class="queue-item" data-id="' + s.id + '">'
                 + '<div class="queue-item__top">'
                 + '<strong>#' + s.id + ' · ' + (s.contact_email || '—') + '</strong>'
@@ -644,36 +655,88 @@ declare(strict_types=1);
                 + '</div>'
                 + '<p class="queue-item__meta">' + label
                 + (s.created_at ? ' · ' + s.created_at : '')
-                + (s.job_id ? ' · job ' + s.job_id : '')
                 + (s.error_message ? ' · ' + s.error_message : '')
                 + '</p>'
                 + '<div class="queue-item__actions">';
-            if (canProcess) {
-                html += '<button type="button" data-process-sub="' + s.id + '">Process Video</button>';
-            }
-            if (s.source === 'youtube' && s.youtube_url) {
-                html += '<button type="button" class="btn-secondary" data-fill-url="' + encodeURIComponent(s.youtube_url) + '">Fill URL</button>';
-            }
-            if (s.job_id && s.status !== 'pending') {
-                html += '<button type="button" class="btn-secondary" data-use-job="' + encodeURIComponent(s.job_id) + '">Use job for Analyze</button>';
+            if (canAnalyze) {
+                html += '<button type="button" data-analyze-job="' + encodeURIComponent(s.job_id) + '">Analyze</button>';
+            } else if (canProcess) {
+                html += '<button type="button" data-process-sub="' + s.id + '">Process</button>';
             }
             html += '</div></div>';
         });
         queueList.innerHTML = html;
     }
 
+    async function runAnalyze(jobId) {
+        if (!jobId || analyzeBusy) return;
+        currentJobId = jobId;
+        analyzeBusy = true;
+        actions.className = 'actions show';
+        setStatus('loading', 'Analyzing rooms with Gemini…');
+        setAnalyzeLog('loading', [
+            'Scanning frames for house interiors…',
+            'Sending keepers to Gemini…',
+            'Saving results for listing #' + (currentListingId || '?') + '…',
+        ]);
+        try {
+            const payload = { id: currentJobId };
+            if (currentListingId) payload.listing_id = currentListingId;
+            const res = await fetch('/api/analyze_yhome_ai.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json().catch(function () {
+                return { ok: false, error: 'Invalid server response (HTTP ' + res.status + ')' };
+            });
+            if (!res.ok || !data.ok) {
+                setAnalyzeLog('error', (data.log || []).concat([data.error || ('Request failed (HTTP ' + res.status + ')')]));
+                throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
+            }
+            let msg = 'Analysis saved'
+                + (data.analysis_db_id ? ' (ai_analyses id=' + data.analysis_db_id + ')' : '')
+                + ' using ' + (data.images_used || '?') + ' frames.';
+            const sync = data.prod_frames_sync || null;
+            if (sync && sync.ok) {
+                msg += ' Pushed ' + (sync.uploaded || 0) + ' frames to prod.';
+            } else if (sync && sync.error) {
+                setStatus('error', 'Analysis saved, but frame upload failed: ' + sync.error);
+                setAnalyzeLog('ok', formatGeminiLog(data));
+                renderAnalysis(data);
+                return;
+            }
+            setStatus('ok', msg);
+            setAnalyzeLog('ok', formatGeminiLog(data));
+            renderAnalysis(data);
+            activeSubmissionId = null;
+            activeSubmissionEmail = '';
+            if (currentListingId) {
+                setListingUrl(currentListingId);
+                loadQueue(currentListingId);
+            }
+        } catch (err) {
+            setStatus('error', err.message || String(err));
+            if (!analyzeLog.classList.contains('error')) {
+                setAnalyzeLog('error', err.message || String(err));
+            }
+        } finally {
+            analyzeBusy = false;
+        }
+    }
+
     queueList.addEventListener('click', async function (e) {
         const t = e.target;
         if (!(t instanceof HTMLElement)) return;
-        if (t.hasAttribute('data-fill-url')) {
-            urlInput.value = decodeURIComponent(t.getAttribute('data-fill-url') || '');
-            urlInput.focus();
-            return;
-        }
-        if (t.hasAttribute('data-use-job')) {
-            currentJobId = decodeURIComponent(t.getAttribute('data-use-job') || '');
-            actions.className = currentJobId ? 'actions show' : 'actions';
-            setStatus('ok', 'Using job ' + currentJobId + '. Click Analyze renovation.');
+        if (t.hasAttribute('data-analyze-job')) {
+            const jobId = decodeURIComponent(t.getAttribute('data-analyze-job') || '');
+            if (!jobId) return;
+            t.disabled = true;
+            try {
+                await runAnalyze(jobId);
+            } finally {
+                t.disabled = false;
+            }
             return;
         }
         if (t.hasAttribute('data-process-sub')) {
@@ -694,11 +757,8 @@ declare(strict_types=1);
                 currentJobId = data.job_id || null;
                 activeSubmissionId = sid;
                 activeSubmissionEmail = data.email || '';
-                actions.className = currentJobId ? 'actions show' : 'actions';
                 renderFrames(data.frames || []);
-                setStatus('ok', 'Frames ready from submission #' + sid
-                    + (data.email ? ' · email ' + data.email : '')
-                    + '. Click Analyze renovation.');
+                setStatus('ok', 'Frames ready. Click Analyze.');
                 await loadQueue(currentListingId);
             } catch (err) {
                 setStatus('error', err.message || String(err));
@@ -708,7 +768,6 @@ declare(strict_types=1);
             }
         }
     });
-
     async function loadListing(listingId) {
         clearResults();
         setStatus('loading', 'Loading listing and analysis from database…');
@@ -741,92 +800,14 @@ declare(strict_types=1);
             });
             if (!res.ok || !data.ok) throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
             currentJobId = data.job_id || null;
-            actions.className = currentJobId ? 'actions show' : 'actions';
             renderFrames(data.frames || []);
-            setStatus('ok', 'Frames ready. Click Analyze renovation to save results for listing #' + currentListingId + '.');
+            setStatus('ok', 'Frames ready. Click Analyze on the submission above.');
             setListingUrl(currentListingId);
+            if (currentListingId) await loadQueue(currentListingId);
         } catch (err) {
             setStatus('error', err.message || String(err));
         } finally {
             btn.disabled = false;
-        }
-    });
-
-    analyzeBtn.addEventListener('click', async function () {
-        if (!currentJobId) return;
-        analyzeBtn.disabled = true;
-        setStatus('loading', 'Analyzing rooms with Gemini…');
-        setAnalyzeLog('loading', [
-            'Locally scanning all frames for house interiors…',
-            'Rejecting exterior / blank frames, then sending keepers (downscaled) to Gemini…',
-            'Saving results to ai_analyses for listing #' + (currentListingId || '?') + '…',
-        ]);
-        try {
-            const payload = { id: currentJobId };
-            if (currentListingId) payload.listing_id = currentListingId;
-            const res = await fetch('/api/analyze_yhome_ai.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json().catch(function () {
-                return { ok: false, error: 'Invalid server response (HTTP ' + res.status + ')' };
-            });
-            if (!res.ok || !data.ok) {
-                setAnalyzeLog('error', (data.log || []).concat([data.error || ('Request failed (HTTP ' + res.status + ')')]));
-                throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
-            }
-            setStatus('ok', 'Analysis saved'
-                + (data.analysis_db_id ? ' (ai_analyses id=' + data.analysis_db_id + ')' : '')
-                + ' using ' + (data.images_used || '?') + ' frames.');
-            setAnalyzeLog('ok', formatGeminiLog(data));
-            const sync = data.prod_frames_sync || null;
-            if (sync && sync.skipped) {
-                setStatus('ok', status.textContent + ' Frames already on this host.');
-            } else if (sync && sync.ok) {
-                setStatus('ok', status.textContent + ' Pushed ' + (sync.uploaded || 0) + ' frames to prod.');
-            } else if (sync && sync.error) {
-                setStatus('error', 'Analysis saved, but frame upload failed: ' + sync.error);
-            }
-            renderAnalysis(data);
-            activeSubmissionId = null;
-            activeSubmissionEmail = '';
-            if (currentListingId) {
-                setListingUrl(currentListingId);
-                loadQueue(currentListingId);
-            }
-        } catch (err) {
-            setStatus('error', err.message || String(err));
-            if (!analyzeLog.classList.contains('error')) {
-                setAnalyzeLog('error', err.message || String(err));
-            }
-        } finally {
-            analyzeBtn.disabled = false;
-        }
-    });
-
-    pushFramesBtn.addEventListener('click', async function () {
-        if (!currentJobId) return;
-        pushFramesBtn.disabled = true;
-        setStatus('loading', 'Uploading selected frames to production…');
-        try {
-            const res = await fetch('/api/push_job_frames.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ id: currentJobId }),
-            });
-            const data = await res.json().catch(function () {
-                return { ok: false, error: 'Invalid server response (HTTP ' + res.status + ')' };
-            });
-            if (!res.ok || !data.ok) {
-                throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
-            }
-            const sync = data.prod_frames_sync || {};
-            setStatus('ok', 'Pushed ' + (sync.uploaded || 0) + ' frames to production for job ' + currentJobId + '.');
-        } catch (err) {
-            setStatus('error', err.message || String(err));
-        } finally {
-            pushFramesBtn.disabled = false;
         }
     });
 

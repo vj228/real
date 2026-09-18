@@ -99,6 +99,128 @@ function yai_sharpness(string $path): float
 }
 
 /**
+ * 64-bit average hash (aHash) as a binary string of length 64.
+ * Near-identical frames (slideshow holds, re-exports) collide within a small Hamming distance.
+ */
+function yai_perceptual_hash(string $path): ?string
+{
+    $im = @imagecreatefromjpeg($path);
+    if ($im === false) {
+        return null;
+    }
+    $w = imagesx($im);
+    $h = imagesy($im);
+    if ($w < 8 || $h < 8) {
+        return null;
+    }
+    $tiny = imagecreatetruecolor(8, 8);
+    imagecopyresampled($tiny, $im, 0, 0, 0, 0, 8, 8, $w, $h);
+    $sum = 0;
+    $vals = [];
+    for ($y = 0; $y < 8; $y++) {
+        for ($x = 0; $x < 8; $x++) {
+            $g = yai_gray(imagecolorat($tiny, $x, $y));
+            $vals[] = $g;
+            $sum += $g;
+        }
+    }
+    $avg = $sum / 64.0;
+    $bits = '';
+    foreach ($vals as $g) {
+        $bits .= $g >= $avg ? '1' : '0';
+    }
+
+    return $bits;
+}
+
+function yai_hash_hamming(string $a, string $b): int
+{
+    $n = min(strlen($a), strlen($b));
+    if ($n === 0) {
+        return PHP_INT_MAX;
+    }
+    $d = abs(strlen($a) - strlen($b));
+    for ($i = 0; $i < $n; $i++) {
+        if ($a[$i] !== $b[$i]) {
+            $d++;
+        }
+    }
+
+    return $d;
+}
+
+/**
+ * Drop near-duplicate house frames; keep the sharper of each similar cluster.
+ *
+ * @param list<array<string,mixed>> $house
+ * @return array{kept:list<array<string,mixed>>,removed:int,log:list<string>}
+ */
+function yai_dedupe_house_frames(array $house, int $maxDistance = 6): array
+{
+    $log = [];
+    if (count($house) <= 1) {
+        return ['kept' => $house, 'removed' => 0, 'log' => $log];
+    }
+
+    $enriched = [];
+    foreach ($house as $row) {
+        $path = (string) ($row['path'] ?? '');
+        $hash = $path !== '' ? yai_perceptual_hash($path) : null;
+        $md5 = ($path !== '' && is_readable($path)) ? (string) @md5_file($path) : '';
+        $sharp = isset($row['sharp']) ? (float) $row['sharp'] : ($path !== '' ? yai_sharpness($path) : 0.0);
+        $row['phash'] = $hash;
+        $row['md5'] = $md5;
+        $row['sharp'] = $sharp;
+        $enriched[] = $row;
+    }
+
+    $kept = [];
+    $removedTimes = [];
+    foreach ($enriched as $row) {
+        $dupOf = null;
+        foreach ($kept as $ki => $prev) {
+            $sameFile = $row['md5'] !== '' && $prev['md5'] !== '' && $row['md5'] === $prev['md5'];
+            $near = $row['phash'] !== null && $prev['phash'] !== null
+                && yai_hash_hamming((string) $row['phash'], (string) $prev['phash']) <= $maxDistance;
+            if (!$sameFile && !$near) {
+                continue;
+            }
+            $dupOf = $ki;
+            break;
+        }
+        if ($dupOf === null) {
+            $kept[] = $row;
+            continue;
+        }
+        // Keep sharper (or earlier if tied)
+        if ((float) $row['sharp'] > (float) $kept[$dupOf]['sharp']) {
+            $removedTimes[] = (int) ($kept[$dupOf]['time_sec'] ?? 0);
+            $kept[$dupOf] = $row;
+        } else {
+            $removedTimes[] = (int) ($row['time_sec'] ?? 0);
+        }
+    }
+
+    $removed = count($removedTimes);
+    if ($removed > 0) {
+        sort($removedTimes);
+        $log[] = 'Removed ' . $removed . ' duplicate/near-duplicate frame(s)'
+            . ' (times: ' . implode(', ', array_map(static fn ($t) => $t . 's', $removedTimes)) . ').';
+    } else {
+        $log[] = 'No duplicate frames detected.';
+    }
+
+    // Strip helper keys before return
+    $out = [];
+    foreach ($kept as $row) {
+        unset($row['phash'], $row['md5']);
+        $out[] = $row;
+    }
+
+    return ['kept' => $out, 'removed' => $removed, 'log' => $log];
+}
+
+/**
  * Heuristic outdoor likelihood 0..1 (sky / grass-heavy frames score higher).
  * Used to prefer indoor kitchen/living/bath/bed frames for Gemini.
  */
@@ -452,6 +574,15 @@ function yai_pick_for_analysis(array $items, int $want): array
             . (count($rejected) > 12 ? '…' : '') . '.';
     }
 
+    $dedupe = yai_dedupe_house_frames($house);
+    $house = $dedupe['kept'];
+    $log = array_merge($log, $dedupe['log']);
+    $guessCounts = [];
+    foreach ($house as $row) {
+        $g = (string) ($row['guess'] ?? 'interior');
+        $guessCounts[$g] = ($guessCounts[$g] ?? 0) + 1;
+    }
+
     // Prefer covering all guessed room types if we must trim under the soft ceiling
     $picked = $house;
     if (count($picked) > $want) {
@@ -515,7 +646,8 @@ function yai_pick_for_analysis(array $items, int $want): array
         'log' => $log,
         'stats' => [
             'candidates' => $n,
-            'house_kept' => count($house),
+            'house_kept' => count($house) + (int) ($dedupe['removed'] ?? 0),
+            'duplicates_removed' => (int) ($dedupe['removed'] ?? 0),
             'rejected' => count($rejected),
             'picked' => count($picked),
             'guess_counts' => $guessCounts,
@@ -1037,8 +1169,15 @@ function yai_db_upsert_analysis(int $listingId, string $jobId, array $result, ar
     if ($videoId === '' && preg_match('/^([A-Za-z0-9_-]{6,20})_/', $jobId, $m)) {
         $videoId = $m[1];
     }
+    $source = strtolower(trim((string) ($jobMeta['source'] ?? '')));
     $youtubeUrl = (string) ($jobMeta['youtube_url'] ?? '');
-    if ($youtubeUrl === '' && $videoId !== '') {
+    // Never invent a YouTube URL for file uploads (video_id like upl_xxxxxxxx is not YouTube).
+    $isUpload = $source === 'upload'
+        || str_starts_with($videoId, 'upl_')
+        || str_starts_with($jobId, 'upl_');
+    if ($isUpload) {
+        $youtubeUrl = '';
+    } elseif ($youtubeUrl === '' && $videoId !== '' && !str_starts_with($videoId, 'upl_')) {
         $youtubeUrl = 'https://www.youtube.com/watch?v=' . $videoId;
     }
     $title = (string) ($jobMeta['title'] ?? '');
@@ -1229,7 +1368,14 @@ Images were pre-filtered to interiors. Each photo is IMAGE #N (local pre-label i
 Only rooms: kitchen, living, bathroom, bedroom. One entry per room type that appears (merge all images of that room into ONE assessment).
 Do NOT invent dollar amounts. Do NOT assess hidden plumbing, electrical, structural, HVAC, roof, mold, foundation, or anything not visible.
 
-Internally weigh: visible physical condition 40%, age/datedness 20%, maintenance 20%, functional appearance 10%, cosmetic 10%.
+IGNORE ALL FURNITURE in every room (sofas, chairs, tables, beds, rugs, decor, staging items, freestanding pieces). Never recommend work for furniture and never let furniture condition affect scores or recommended_work.
+
+Room focus (prioritize these when scoring and recommending work; other visible fixed finishes may still be noted if clearly relevant):
+- living + bedroom: focus on floors, walls (paint/drywall), and windows.
+- kitchen: focus on floors, walls (paint/drywall), windows, cabinets, sinks (incl. faucet if visible), and cooking items (range/cooktop, oven, range hood).
+- bathroom: focus on floors, walls (paint/drywall), windows, toilet, and showers (incl. shower enclosure/tile that is part of the shower).
+
+Internally weigh: visible physical condition 40%, age/datedness 20%, maintenance 20%, functional appearance 10%, cosmetic 10% — weighted toward the focused items above.
 Return condition_score as an integer 0–100:
 90–100 Excellent, 80–89 Very Good, 70–79 Good, 60–69 Fair, 40–59 Poor, 20–39 Very Poor, 0–19 Severe.
 Damage hurts scores more than dated style. A clean dated bathroom can still be 70–80.
@@ -1240,11 +1386,12 @@ recommended_work[].priority must be required|recommended|optional:
 - recommended = meaningful improvement for buyers
 - optional = primarily cosmetic
 Use ONLY these work codes: ' . $codesList . '
+Prefer work codes that match each room focus (all rooms → floor/paint/drywall/window; kitchen also → cabinet/sink/faucet/hood/cooking-area; bathroom also → toilet/shower). Other fixed-finish codes are allowed when clearly needed.
 Keep summary ≤25 words, ≤3 short observations, reason ≤12 words. Deduplicate work items.
 
 Return ONLY JSON:
-{"rooms":[{"room":"kitchen","condition_score":78,"confidence":0.91,"summary":"…","observations":["…"],"recommended_work":[{"code":"countertop_replace","title":"Replace countertop","priority":"optional","reason":"…"}],"images":[0,3]}]}
-Map images[] to IMAGE # indexes. Kitchen: stove/hood/sink/cabinets. Bathroom: toilet/tub/shower/vanity. Bedroom: bed. Living: sofa/fireplace/TV.';
+{"rooms":[{"room":"kitchen","condition_score":78,"confidence":0.91,"summary":"…","observations":["…"],"recommended_work":[{"code":"cabinet_refinish","title":"Refinish cabinets","priority":"optional","reason":"…"}],"images":[0,3]}]}
+Map images[] to IMAGE # indexes.';
 
 $parts[] = ['text' => $prompt];
 $log[] = 'Built Gemini request with ' . count($frames) . ' house frames (from '

@@ -119,6 +119,18 @@ function yai_push_job_frames_to_public(string $jobId, string $workRoot): array
         }
     }
 
+    $sourceFile = null;
+    foreach (['mp4', 'mov', 'webm', 'mkv', 'm4v', 'avi'] as $ext) {
+        $candidate = $jobDir . '/source.' . $ext;
+        if (is_readable($candidate) && is_file($candidate) && filesize($candidate) > 0) {
+            // Soft cap ~180MB so Hostinger upload limits are less likely to fail
+            if (filesize($candidate) <= 180 * 1024 * 1024) {
+                $sourceFile = ['path' => $candidate, 'name' => 'source.' . $ext, 'mime' => 'video/' . ($ext === 'mp4' ? 'mp4' : 'octet-stream')];
+            }
+            break;
+        }
+    }
+
     foreach ($batches as $batchIndex => $batch) {
         $post = [
             'key' => $key,
@@ -127,6 +139,10 @@ function yai_push_job_frames_to_public(string $jobId, string $workRoot): array
         if ($batchIndex === 0) {
             foreach ($meta as $k => $v) {
                 $post[$k] = $v;
+            }
+            if ($sourceFile !== null) {
+                $post['source'] = new CURLFile($sourceFile['path'], $sourceFile['mime'], $sourceFile['name']);
+                $post['source_name'] = $sourceFile['name'];
             }
         }
         foreach ($batch as $i => $row) {

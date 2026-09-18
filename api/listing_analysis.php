@@ -132,21 +132,85 @@ if ($analysisRow) {
         'gemini' => is_array($geminiRaw) ? $geminiRaw : null,
         'source' => 'database',
     ];
+}
 
-    // Prefer frames from analysis images; also load full job gallery if folder exists
+// Frames from processed job even before analysis is saved
+if ($jobId === null || $jobId === '') {
+    try {
+        $jStmt = $pdo->prepare(
+            'SELECT job_id FROM house_tour_submissions
+             WHERE listing_id = ? AND job_id IS NOT NULL AND job_id != \'\'
+               AND status IN (\'processed\', \'analyzed\')
+             ORDER BY processed_at DESC, id DESC
+             LIMIT 1'
+        );
+        $jStmt->execute([$id]);
+        $jRow = $jStmt->fetch(PDO::FETCH_ASSOC);
+        if ($jRow && trim((string) ($jRow['job_id'] ?? '')) !== '') {
+            $jobId = trim((string) $jRow['job_id']);
+        }
+    } catch (Throwable $e) {
+        // Table may be missing on older DBs; frames stay empty.
+    }
+}
+
+if (is_string($jobId) && $jobId !== '' && preg_match('/^[A-Za-z0-9_-]{4,120}$/', $jobId)) {
     $selectedDir = YAI_WORK_ROOT . '/' . $jobId . '/selected';
     if (is_dir($selectedDir)) {
         $files = glob($selectedDir . '/t*.jpg') ?: [];
         natcasesort($files);
-        foreach (array_values($files) as $path) {
+        $files = array_values($files);
+        $dedupeHelper = dirname(__DIR__) . '/helpers/yai_frame_dedupe.php';
+        if (is_readable($dedupeHelper)) {
+            require_once $dedupeHelper;
+            if (function_exists('yai_dedupe_jpeg_paths')) {
+                $files = yai_dedupe_jpeg_paths($files)['kept'];
+            }
+        }
+        $existingUrls = [];
+        foreach ($files as $path) {
             $base = basename($path);
             if (!preg_match('/^t(\d+)\.jpg$/', $base, $m)) {
                 continue;
             }
+            $url = YAI_PUBLIC_BASE . '/' . rawurlencode($jobId) . '/selected/' . rawurlencode($base);
+            $existingUrls[$url] = true;
             $frames[] = [
                 'time_sec' => (int) $m[1],
-                'url' => YAI_PUBLIC_BASE . '/' . rawurlencode($jobId) . '/selected/' . rawurlencode($base),
+                'url' => $url,
             ];
+        }
+        // Drop room thumbnails that point at deleted/missing frames
+        if ($analysis !== null && isset($analysis['rooms']) && is_array($analysis['rooms'])) {
+            foreach ($analysis['rooms'] as &$roomRow) {
+                if (!is_array($roomRow) || !isset($roomRow['images']) || !is_array($roomRow['images'])) {
+                    continue;
+                }
+                $keptImgs = [];
+                $seen = [];
+                foreach ($roomRow['images'] as $img) {
+                    $url = '';
+                    if (is_array($img)) {
+                        $url = (string) ($img['url'] ?? '');
+                    } elseif (is_string($img)) {
+                        $url = $img;
+                    }
+                    if ($url === '' || isset($seen[$url])) {
+                        continue;
+                    }
+                    if ($existingUrls !== [] && !isset($existingUrls[$url])) {
+                        continue;
+                    }
+                    $seen[$url] = true;
+                    if (is_array($img)) {
+                        $keptImgs[] = $img;
+                    } else {
+                        $keptImgs[] = ['url' => $url];
+                    }
+                }
+                $roomRow['images'] = $keptImgs;
+            }
+            unset($roomRow);
         }
     }
 }

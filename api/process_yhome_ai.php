@@ -141,7 +141,7 @@ function yt_download_url(string $url, string $destPath, ?string &$error = null):
     $ok = curl_exec($ch);
     $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $cerr = curl_error($ch);
-    curl_close($ch);
+    unset($ch);
     fclose($fp);
     if ($ok === false || $http < 200 || $http >= 300) {
         @unlink($destPath);
@@ -533,6 +533,7 @@ if ($submissionId > 0) {
         $source = 'upload';
         $videoId = 'upl_' . substr(bin2hex(random_bytes(4)), 0, 8);
         $title = pathinfo($origName, PATHINFO_FILENAME) ?: $origName;
+        $watchUrl = null;
     } else {
         $url = (string) ($sub['youtube_url'] ?? '');
         $videoId = yt_parse_id($url);
@@ -574,6 +575,7 @@ if ($submissionId > 0) {
     $videoId = 'upl_' . substr(bin2hex(random_bytes(4)), 0, 8);
     $title = pathinfo($origName, PATHINFO_FILENAME) ?: $origName;
     $source = 'upload';
+    $watchUrl = null;
 } else {
     $videoId = yt_parse_id($url);
     if ($videoId === null) {

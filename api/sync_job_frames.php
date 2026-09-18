@@ -50,9 +50,32 @@ if (!is_array($names)) {
 
 $uploaded = 0;
 $errors = [];
+$sourceSaved = false;
 
 if (!isset($_FILES['frames']) || !is_array($_FILES['frames']['error'] ?? null)) {
     sync_out(['ok' => false, 'error' => 'No frames uploaded'], 400);
+}
+
+// Optional uploaded tour source video (file uploads, not YouTube)
+if (isset($_FILES['source']) && is_array($_FILES['source'])) {
+    $srcErr = (int) ($_FILES['source']['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($srcErr === UPLOAD_ERR_OK) {
+        $srcTmp = (string) ($_FILES['source']['tmp_name'] ?? '');
+        $srcName = basename((string) ($_POST['source_name'] ?? $_FILES['source']['name'] ?? 'source.mp4'));
+        if (!preg_match('/^source\.(mp4|mov|webm|mkv|m4v|avi)$/i', $srcName)) {
+            $errors[] = 'source bad name: ' . $srcName;
+        } elseif ($srcTmp !== '' && is_uploaded_file($srcTmp)) {
+            $dest = $jobDir . '/' . strtolower($srcName);
+            if (move_uploaded_file($srcTmp, $dest)) {
+                @chmod($dest, 0644);
+                $sourceSaved = true;
+            } else {
+                $errors[] = 'source move failed';
+            }
+        }
+    } elseif ($srcErr !== UPLOAD_ERR_NO_FILE) {
+        $errors[] = 'source upload error ' . $srcErr;
+    }
 }
 
 $errorsList = $_FILES['frames']['error'];
@@ -129,5 +152,6 @@ sync_out([
     'ok' => true,
     'job_id' => $jobId,
     'uploaded' => $uploaded,
+    'source_saved' => $sourceSaved,
     'errors' => $errors,
 ]);

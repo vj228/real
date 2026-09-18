@@ -39,21 +39,28 @@ function house_score_tone(int $score): string
     return 'red';
 }
 
-/** @return string|null 11-char YouTube id */
+/** @return string|null 11-char YouTube id (rejects upload placeholders like upl_…) */
 function house_youtube_id(?string $url): ?string
 {
     $url = trim((string) $url);
     if ($url === '') {
         return null;
     }
+    $id = null;
     if (preg_match('/^[A-Za-z0-9_-]{11}$/', $url)) {
-        return $url;
+        $id = $url;
+    } elseif (preg_match('/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/', $url, $m)) {
+        $id = $m[1];
     }
-    if (preg_match('/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/', $url, $m)) {
-        return $m[1];
+    if ($id === null) {
+        return null;
+    }
+    // Upload jobs use ids like upl_9f9bc4c8 (also 11 chars) — not real YouTube.
+    if (str_starts_with($id, 'upl_')) {
+        return null;
     }
 
-    return null;
+    return $id;
 }
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -136,6 +143,32 @@ foreach ($analysisRows as $i => $row) {
                 break;
             }
         }
+        // File-upload jobs: fall back to original submission video on this host
+        if ($localVideoUrl === null) {
+            try {
+                $subStmt = $pdo->prepare(
+                    'SELECT id, stored_path FROM house_tour_submissions
+                     WHERE job_id = ? AND source = \'upload\'
+                     ORDER BY id DESC LIMIT 1'
+                );
+                $subStmt->execute([$jobId]);
+                $sub = $subStmt->fetch(PDO::FETCH_ASSOC);
+                if ($sub) {
+                    $rel = ltrim(str_replace('\\', '/', (string) ($sub['stored_path'] ?? '')), '/');
+                    if ($rel !== '' && is_readable(__DIR__ . '/' . $rel)) {
+                        $localVideoUrl = '/' . $rel;
+                    } elseif ((int) ($sub['id'] ?? 0) > 0) {
+                        $localVideoUrl = '/api/tour_file.php?id=' . (int) $sub['id'];
+                    }
+                }
+            } catch (Throwable $e) {
+                // Older DBs may lack the table; leave localVideoUrl null.
+            }
+        }
+    }
+    // Prefer uploaded file over a mistaken YouTube id
+    if ($localVideoUrl !== null) {
+        $ytId = null;
     }
     if ($ytId === null && $localVideoUrl === null) {
         // Still list the slot so numbering stays stable even if media is missing.
@@ -193,6 +226,23 @@ if ($analysisRow) {
     if ($disclaimer === '') {
         $disclaimer = 'AI estimate based on visible conditions in the provided images. Hidden plumbing, electrical, structural, HVAC, roofing, moisture, mold, foundation and other concealed conditions are not included. Actual contractor pricing may vary.';
     }
+
+    // Drop missing / near-duplicate room thumbnails before render
+    require_once __DIR__ . '/helpers/yai_frame_dedupe.php';
+    if (is_array($rooms)) {
+        foreach ($rooms as &$roomRow) {
+            if (!is_array($roomRow)) {
+                continue;
+            }
+            $imgs = $roomRow['images'] ?? [];
+            if (!is_array($imgs) || $imgs === []) {
+                continue;
+            }
+            $roomRow['images'] = yai_dedupe_room_images($imgs, __DIR__);
+        }
+        unset($roomRow);
+    }
+
     $analysis = [
         'rooms' => $rooms,
         'overall_score' => $overallScore,
@@ -1144,7 +1194,11 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                 <?php endif; ?>
                             </p>
                             <div class="estimate-video__frame">
-                                <?php if ($ytId !== null): ?>
+                                <?php if ($localVideoUrl !== null): ?>
+                                    <video controls playsinline preload="metadata"
+                                           src="<?= house_h((string) $localVideoUrl) ?>"
+                                           title="Uploaded house tour video <?= (int) $vid['number'] ?>"></video>
+                                <?php elseif ($ytId !== null): ?>
                                     <iframe
                                         src="https://www.youtube-nocookie.com/embed/<?= house_h((string) $ytId) ?>"
                                         title="House tour video <?= (int) $vid['number'] ?>"
@@ -1152,13 +1206,9 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                         allowfullscreen
                                         loading="lazy"
                                         referrerpolicy="strict-origin-when-cross-origin"></iframe>
-                                <?php else: ?>
-                                    <video controls playsinline preload="metadata"
-                                           src="<?= house_h((string) $localVideoUrl) ?>"
-                                           title="Uploaded house tour video <?= (int) $vid['number'] ?>"></video>
                                 <?php endif; ?>
                             </div>
-                            <?php if ($ytId !== null): ?>
+                            <?php if ($localVideoUrl === null && $ytId !== null): ?>
                                 <a class="estimate-video__link"
                                    href="https://www.youtube.com/watch?v=<?= house_h((string) $ytId) ?>"
                                    target="_blank" rel="noopener">Open on YouTube</a>
@@ -1220,7 +1270,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                             continue;
                                         }
                                         ?>
-                                        <img src="<?= house_h($url) ?>" alt="<?= house_h($roomName) ?>" loading="lazy">
+                                        <img src="<?= house_h($url) ?>" alt="<?= house_h($roomName) ?>" loading="lazy" onerror="this.remove()">
                                     <?php endforeach; ?>
                                 </div>
                             <?php endif; ?>

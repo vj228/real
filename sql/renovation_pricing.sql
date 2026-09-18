@@ -38,7 +38,8 @@ INSERT INTO renovation_pricing (code, title, estimate_low, estimate_high, catego
     ('bath_tile_replace', 'Replace bath tile', 2000, 7000, 'bathroom', 180),
     ('light_fixture_replace', 'Replace light fixtures', 200, 900, 'general', 190),
     ('door_replace', 'Replace door', 400, 1500, 'general', 200),
-    ('closet_update', 'Update closet', 800, 3000, 'bedroom', 210)
+    ('closet_update', 'Update closet', 800, 3000, 'bedroom', 210),
+    ('window_replace', 'Replace windows', 1200, 4500, 'general', 220)
 ON DUPLICATE KEY UPDATE
     title = VALUES(title),
     estimate_low = VALUES(estimate_low),
