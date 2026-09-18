@@ -44,13 +44,6 @@ const inputEmailValue = document.getElementById('input-email-value');
 let currentStep = 1;
 const totalSteps = steps.length;
 
-/** Resolve /foo/bar/script.php relative to current page (works when app is not at domain root). */
-function yhomeApiUrl(filename) {
-    const pathname = window.location.pathname;
-    const dir = pathname.replace(/[^/]*$/, '');
-    return `${dir}${filename}`;
-}
-
 scrollButtons.forEach((button) => {
     button.addEventListener('click', () => {
         formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -308,33 +301,6 @@ function saveLead(data, result) {
     window.localStorage.setItem(storageKey, JSON.stringify(existing));
 }
 
-function persistHomeOfferToServer(data, result) {
-    const visitRaw = window.YHOME_MARKETING_VISIT_ID;
-    const visitId = typeof visitRaw === 'number' && Number.isFinite(visitRaw) && visitRaw > 0 ? visitRaw : null;
-    const body = JSON.stringify({
-        visit_id: visitId,
-        form: data,
-        result
-    });
-    const fetchOpts = {
-        method: 'POST',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body,
-        keepalive: true,
-        credentials: 'same-origin'
-    };
-    fetch(yhomeApiUrl('api/save_home_offer.php'), fetchOpts)
-        .then((j) => {
-            if (!j || j.ok !== true) {
-                console.warn('[yHome] intake not saved:', j && j.error ? j.error : j);
-            }
-        })
-        .catch((e) => console.warn('[yHome] intake save request failed', e));
-}
-
 startReportButton.addEventListener('click', () => {
     if (!validateAddress()) {
         return;
@@ -418,7 +384,6 @@ form.addEventListener('submit', (event) => {
 
     const result = calculateReport(data);
     saveLead(data, result);
-    persistHomeOfferToServer(data, result);
 
     window.setTimeout(() => {
         console.log('Home report submitted:', data);

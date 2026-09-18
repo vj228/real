@@ -30,7 +30,7 @@ $userPages = [
     [
         'title' => 'Agent Partner dashboard',
         'path' => '/agent-dashboard.php',
-        'note' => 'Agents enter referral code to see activity',
+        'note' => 'Agents sign in with listing-agent email',
     ],
     [
         'title' => 'Intake (legacy)',
@@ -61,9 +61,14 @@ $adminPages = [
         'note' => 'Add partner referral codes',
     ],
     [
-        'title' => 'Agent dashboard (as AGT102)',
-        'path' => '/agent-dashboard.php?code=AGT102',
-        'note' => 'Open demo agent dashboard directly',
+        'title' => 'Listing claims',
+        'path' => '/agent-claims.php',
+        'note' => 'All claimed / pending addresses — approve to unlock contact',
+    ],
+    [
+        'title' => 'Agent dashboard (listing email)',
+        'path' => '/agent-dashboard.php?email=vickilee1616@yahoo.com',
+        'note' => 'Open dashboard for scraped listing agent email',
     ],
     [
         'title' => 'This page index',

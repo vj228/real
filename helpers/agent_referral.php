@@ -96,7 +96,7 @@ function agent_ref_current(): ?string
 }
 
 /**
- * @return array{id:int,referral_code:string,name:string}|null
+ * @return array{id:int,referral_code:string,name:string,email:string}|null
  */
 function agent_ref_find_agent(PDO $pdo, string $code): ?array
 {
@@ -105,7 +105,7 @@ function agent_ref_find_agent(PDO $pdo, string $code): ?array
         return null;
     }
     $stmt = $pdo->prepare(
-        'SELECT id, referral_code, name
+        'SELECT id, referral_code, name, email
          FROM agents
          WHERE referral_code = ? AND is_active = 1
          LIMIT 1'
@@ -120,7 +120,115 @@ function agent_ref_find_agent(PDO $pdo, string $code): ?array
         'id' => (int) $row['id'],
         'referral_code' => (string) $row['referral_code'],
         'name' => (string) ($row['name'] ?? ''),
+        'email' => strtolower(trim((string) ($row['email'] ?? ''))),
     ];
+}
+
+function agent_ref_normalize_email(?string $email): ?string
+{
+    $email = strtolower(trim((string) $email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return null;
+    }
+
+    return $email;
+}
+
+/**
+ * @return array{id:int,referral_code:string,name:string,email:string}|null
+ */
+function agent_ref_find_agent_by_email(PDO $pdo, string $email): ?array
+{
+    $email = agent_ref_normalize_email($email);
+    if ($email === null) {
+        return null;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT id, referral_code, name, email
+         FROM agents
+         WHERE LOWER(TRIM(email)) = ? AND is_active = 1
+         LIMIT 1'
+    );
+    $stmt->execute([$email]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'id' => (int) $row['id'],
+        'referral_code' => (string) $row['referral_code'],
+        'name' => (string) ($row['name'] ?? ''),
+        'email' => strtolower(trim((string) ($row['email'] ?? ''))),
+    ];
+}
+
+/**
+ * Sign in with email: reuse agents row or create one (any email allowed).
+ *
+ * @return array{id:int,referral_code:string,name:string,email:string}|null
+ */
+function agent_ref_login_by_email(PDO $pdo, string $email, ?string $displayName = null): ?array
+{
+    $email = agent_ref_normalize_email($email);
+    if ($email === null) {
+        return null;
+    }
+
+    $existing = agent_ref_find_agent_by_email($pdo, $email);
+    if ($existing !== null) {
+        return $existing;
+    }
+
+    // Prefer scraped listing-agent name when this email appears on a listing.
+    $name = trim((string) ($displayName ?? ''));
+    if ($name === '') {
+        $listingStmt = $pdo->prepare(
+            'SELECT listing_agent_name
+             FROM zillow_sale_listings
+             WHERE LOWER(TRIM(listing_agent_email)) = ?
+             ORDER BY id DESC
+             LIMIT 1'
+        );
+        $listingStmt->execute([$email]);
+        $listing = $listingStmt->fetch(PDO::FETCH_ASSOC);
+        if (is_array($listing)) {
+            $name = trim((string) ($listing['listing_agent_name'] ?? ''));
+        }
+    }
+    if ($name === '') {
+        $local = strstr($email, '@', true);
+        $name = is_string($local) && $local !== '' ? $local : 'Agent';
+    }
+
+    $code = agent_ref_next_referral_code($pdo);
+    $ins = $pdo->prepare(
+        'INSERT INTO agents (referral_code, name, email, is_active)
+         VALUES (?, ?, ?, 1)'
+    );
+    $ins->execute([$code, $name, $email]);
+
+    return agent_ref_find_agent_by_email($pdo, $email);
+}
+
+function agent_ref_next_referral_code(PDO $pdo): string
+{
+    $suggested = 'AGT200';
+    try {
+        $row = $pdo->query(
+            "SELECT referral_code FROM agents
+             WHERE referral_code REGEXP '^AGT[0-9]+$'
+             ORDER BY CAST(SUBSTRING(referral_code, 4) AS UNSIGNED) DESC
+             LIMIT 1"
+        )->fetch(PDO::FETCH_ASSOC);
+        if ($row && preg_match('/^AGT(\d+)$/', (string) $row['referral_code'], $m)) {
+            $suggested = 'AGT' . str_pad((string) ((int) $m[1] + 1), 3, '0', STR_PAD_LEFT);
+        }
+    } catch (Throwable $e) {
+        // keep default
+    }
+
+    return $suggested;
 }
 
 /**

@@ -213,19 +213,20 @@ function rapidapi_listing_from_record(array $row): ?array
     ];
 }
 
-function rapidapi_upsert_listings_db(PDO $pdo, array $listings, string $searchQuery): void
+function rapidapi_upsert_listings_db(PDO $pdo, array $listings, string $searchQuery): array
 {
+    $savedIds = [];
     $sql = <<<'SQL'
 INSERT INTO zillow_sale_listings (
     last_fetched_at, search_query, zpid, address, detail_url,
     list_price, zestimate, price_vs_zestimate_pct, price_per_sqft,
     property_tax_annual, tax_assessed_value, hoa_fee,
-    beds, baths, sqft, days_on_zillow, img_src, images_json
+    beds, baths, sqft, days_on_zillow, img_src, images_json, is_active
 ) VALUES (
     :last_fetched_at, :search_query, :zpid, :address, :detail_url,
     :list_price, :zestimate, :price_vs_zestimate_pct, :price_per_sqft,
     :property_tax_annual, :tax_assessed_value, :hoa_fee,
-    :beds, :baths, :sqft, :days_on_zillow, :img_src, :images_json
+    :beds, :baths, :sqft, :days_on_zillow, :img_src, :images_json, 1
 )
 ON DUPLICATE KEY UPDATE
     last_fetched_at = VALUES(last_fetched_at),
@@ -244,7 +245,8 @@ ON DUPLICATE KEY UPDATE
     sqft = VALUES(sqft),
     days_on_zillow = VALUES(days_on_zillow),
     img_src = VALUES(img_src),
-    images_json = VALUES(images_json)
+    images_json = VALUES(images_json),
+    is_active = 1
 SQL;
     $stmt = $pdo->prepare($sql);
     $now = date('Y-m-d H:i:s');
@@ -291,6 +293,19 @@ SQL;
         } elseif ($n === 2) {
             $updated++;
         }
+
+        $idStmt = $pdo->prepare('SELECT id FROM zillow_sale_listings WHERE zpid = ? LIMIT 1');
+        $idStmt->execute([$zpid]);
+        $listingId = (int) $idStmt->fetchColumn();
+        if ($listingId > 0) {
+            $savedIds[] = [
+                'id' => $listingId,
+                'zpid' => $zpid,
+                'address' => $address,
+                'detail_url' => $detailUrl !== '' ? $detailUrl : null,
+                'raw' => is_array($listing['_raw'] ?? null) ? $listing['_raw'] : [],
+            ];
+        }
     }
 
     script_flush(sprintf(
@@ -299,6 +314,8 @@ SQL;
         $updated,
         $skipped
     ));
+
+    return $savedIds;
 }
 
 function rapidapi_address_dedupe_key(string $addr): string {
@@ -324,6 +341,7 @@ function rapidapi_listings_from_response(array $data, int $max): array
         if ($listing === null) {
             continue;
         }
+        $listing['_raw'] = $row;
         $k = rapidapi_address_dedupe_key($listing['Address']);
         if (isset($seen[$k])) {
             continue;
@@ -341,9 +359,10 @@ function rapidapi_listings_from_response(array $data, int $max): array
 $rapidApiKey = '24c72349a4msh978d1a453ef7522p193f33jsn404aedf6c8e9';
 $rapidApiHost = 'real-estate-zillow-com.p.rapidapi.com';
 $rapidApiPath = '/v1/search/sale';
-$locations = ['arcadia ca', 'alhambra ca'];
-$pageWindow = 12; // rotate through pages to reduce repeats across 2-hour cron runs
-$page = ((int) floor((int) date('G') / 2) % $pageWindow) + 1; // 1..12
+// Arcadia newest sales — 10 houses per run.
+$locations = ['arcadia ca'];
+$pageWindow = 12;
+$page = 1;
 $maxResults = 10;
 
 if ($rapidApiKey === '') {
@@ -356,6 +375,22 @@ $pdo = db_pdo_connect();
 if ($pdo === null) {
     script_flush('DB not configured. Add db.credentials.php and run sql/zillow_sale_listings.sql');
     exit(1);
+}
+
+/** Hostinger closes idle MySQL during long RapidAPI waits — reconnect when needed. */
+function rapidapi_pdo_alive(PDO $pdo): PDO
+{
+    try {
+        $pdo->query('SELECT 1');
+        return $pdo;
+    } catch (Throwable $e) {
+        $fresh = db_pdo_connect();
+        if ($fresh === null) {
+            throw new RuntimeException('DB reconnect failed: ' . (db_pdo_last_error() ?? 'unknown'));
+        }
+        script_flush('DB: reconnected after idle timeout.');
+        return $fresh;
+    }
 }
 
 function rapidapi_fetch_sale(string $host, string $path, string $apiKey, array $queryParams): array
@@ -395,6 +430,173 @@ function rapidapi_fetch_sale(string $host, string $path, string $apiKey, array $
     return $data;
 }
 
+/**
+ * Try common property-detail paths on this RapidAPI host until one works.
+ *
+ * @return array<string,mixed>|null
+ */
+function rapidapi_fetch_property_detail(string $host, string $apiKey, string $zpid, ?string $detailUrl = null): ?array
+{
+    $zpid = trim($zpid);
+    if ($zpid === '' || !ctype_digit($zpid)) {
+        return null;
+    }
+    $attempts = [
+        ['/v1/property', array_filter(['zpid' => $zpid, 'url' => $detailUrl])],
+        ['/property', array_filter(['zpid' => $zpid, 'url' => $detailUrl])],
+        ['/propertyDetails', ['zpid' => $zpid]],
+        ['/v1/property/' . rawurlencode($zpid), []],
+        ['/pro/property', ['zpid' => $zpid]],
+    ];
+    foreach ($attempts as [$path, $query]) {
+        try {
+            $data = rapidapi_fetch_sale($host, $path, $apiKey, is_array($query) ? $query : []);
+            // This API often returns HTTP 200 with status=400 and data=null for missing endpoints/params.
+            if (!is_array($data) || $data === []) {
+                continue;
+            }
+            $status = $data['status'] ?? null;
+            if ($status !== null && (int) $status >= 400) {
+                continue;
+            }
+            if (array_key_exists('data', $data) && $data['data'] === null) {
+                continue;
+            }
+            if (!empty($data['message']) && stripos((string) $data['message'], 'does not exist') !== false) {
+                continue;
+            }
+
+            return $data;
+        } catch (Throwable $e) {
+            // try next path
+            continue;
+        }
+    }
+
+    return null;
+}
+
+require_once dirname(__DIR__) . '/helpers/listing_agent.php';
+
+// This RapidAPI product's property-detail endpoints are unused/broken and burn quota — keep off.
+$rapidApiTryPropertyDetail = false;
+// Don't re-spend Gemini Search quota on the same listing more than once per N days.
+$geminiAgentRetryDays = 7;
+
+/**
+ * @param list<array{id:int,zpid:string,address:string,detail_url:?string,raw:array}> $saved
+ */
+function rapidapi_enrich_listing_agents(
+    PDO $pdo,
+    string $host,
+    string $apiKey,
+    array $saved,
+    bool $tryPropertyDetail = false,
+    int $geminiRetryDays = 7
+): void {
+    foreach ($saved as $row) {
+        $listingId = (int) $row['id'];
+        $zpid = (string) $row['zpid'];
+        $address = (string) $row['address'];
+        $detailUrl = $row['detail_url'] ?? null;
+
+        script_flush('Agent lookup for zpid=' . $zpid . '…');
+
+        // 1) Start from DB — never re-call APIs if we already have a full agent.
+        $existing = listing_agent_load_existing($pdo, $listingId);
+        $fromSearch = listing_agent_from_rapid_payload(is_array($row['raw']) ? $row['raw'] : []);
+        $agent = [
+            'name' => $existing['name'] ?? $fromSearch['name'],
+            'phone' => $existing['phone'] ?? $fromSearch['phone'],
+            'email' => $existing['email'] ?? $fromSearch['email'],
+            'broker' => $existing['broker'] ?? $fromSearch['broker'],
+            'source' => $existing['source'] ?? ($fromSearch['source'] ?? 'rapidapi'),
+            'raw' => $fromSearch['raw'] ?? [],
+        ];
+
+        if (listing_agent_is_complete($agent)) {
+            script_flush('  Skip APIs — agent already complete in DB.');
+            // Still persist broker/name from search if DB was empty on those (cheap local write).
+            if (($existing['broker'] === null && $agent['broker']) || ($existing['name'] === null && $agent['name'])) {
+                try {
+                    $pdo = rapidapi_pdo_alive($pdo);
+                    listing_agent_save($pdo, $listingId, $agent);
+                } catch (Throwable $e) {
+                    script_flush('  Agent save failed: ' . $e->getMessage());
+                }
+            }
+            continue;
+        }
+
+        // 2) Optional RapidAPI property detail (off by default — wastes quota on this host).
+        if ($tryPropertyDetail) {
+            $detail = rapidapi_fetch_property_detail($host, $apiKey, $zpid, is_string($detailUrl) ? $detailUrl : null);
+            if (is_array($detail)) {
+                $fromDetail = listing_agent_from_rapid_payload($detail);
+                $agent['name'] = $agent['name'] ?? $fromDetail['name'];
+                $agent['phone'] = $agent['phone'] ?? $fromDetail['phone'];
+                $agent['email'] = $agent['email'] ?? $fromDetail['email'];
+                $agent['broker'] = $agent['broker'] ?? $fromDetail['broker'];
+                if (!empty($fromDetail['raw'])) {
+                    $agent['raw'] = $fromDetail['raw'];
+                }
+                $agent['source'] = 'rapidapi';
+                script_flush('  RapidAPI detail: name=' . ($agent['name'] ?? '—')
+                    . ' phone=' . ($agent['phone'] ?? '—')
+                    . ' email=' . ($agent['email'] ?? '—'));
+            } else {
+                script_flush('  RapidAPI property detail skipped/empty.');
+            }
+        } else {
+            script_flush('  RapidAPI property detail skipped (cost save).');
+        }
+
+        if (listing_agent_is_complete($agent)) {
+            try {
+                $pdo = rapidapi_pdo_alive($pdo);
+                listing_agent_save($pdo, $listingId, $agent);
+                script_flush('  Saved agent fields for listing id=' . $listingId);
+            } catch (Throwable $e) {
+                script_flush('  Agent save failed: ' . $e->getMessage());
+            }
+            continue;
+        }
+
+        // 3) Gemini + Search only if needed and not recently attempted.
+        if (!listing_agent_should_call_gemini($agent, $existing['fetched_at'] ?? null, $geminiRetryDays)) {
+            $days = max(1, $geminiRetryDays);
+            script_flush("  Skip Gemini — incomplete but tried within last {$days} day(s).");
+            // Save any new search-only fields (e.g. broker) without bumping a wasted Gemini attempt
+            // unless we have something new worth storing.
+            if (($agent['broker'] && !$existing['broker']) || ($agent['name'] && !$existing['name']) || ($agent['phone'] && !$existing['phone'])) {
+                try {
+                    $pdo = rapidapi_pdo_alive($pdo);
+                    listing_agent_save($pdo, $listingId, $agent);
+                    script_flush('  Saved partial agent fields for listing id=' . $listingId);
+                } catch (Throwable $e) {
+                    script_flush('  Agent save failed: ' . $e->getMessage());
+                }
+            }
+            continue;
+        }
+
+        script_flush('  Missing fields — asking Gemini + Search…');
+        $agent = listing_agent_gemini_enrich($address, $zpid, $detailUrl, $agent);
+        script_flush('  After Gemini: name=' . ($agent['name'] ?? '—')
+            . ' phone=' . ($agent['phone'] ?? '—')
+            . ' email=' . ($agent['email'] ?? '—')
+            . ' source=' . ($agent['source'] ?? ''));
+
+        try {
+            $pdo = rapidapi_pdo_alive($pdo);
+            listing_agent_save($pdo, $listingId, $agent);
+            script_flush('  Saved agent fields for listing id=' . $listingId);
+        } catch (Throwable $e) {
+            script_flush('  Agent save failed: ' . $e->getMessage());
+        }
+    }
+}
+
 foreach ($locations as $locationOrRid) {
     script_flush('RapidAPI: ' . $locationOrRid . ' (sort=newest, page=' . $page . ')');
     try {
@@ -417,5 +619,15 @@ foreach ($locations as $locationOrRid) {
     }
 
     script_flush('Saving ' . count($listings) . ' listing(s) for ' . $locationOrRid);
-    rapidapi_upsert_listings_db($pdo, $listings, $locationOrRid);
+    $pdo = rapidapi_pdo_alive($pdo);
+    $saved = rapidapi_upsert_listings_db($pdo, $listings, $locationOrRid);
+    $pdo = rapidapi_pdo_alive($pdo);
+    rapidapi_enrich_listing_agents(
+        $pdo,
+        $rapidApiHost,
+        $rapidApiKey,
+        $saved,
+        $rapidApiTryPropertyDetail,
+        $geminiAgentRetryDays
+    );
 }

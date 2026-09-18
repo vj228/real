@@ -87,7 +87,7 @@ if (!$pdo instanceof PDO) {
     ts_fail('Database unavailable', 500);
 }
 
-$exists = $pdo->prepare('SELECT id FROM zillow_sale_listings WHERE id = ? LIMIT 1');
+$exists = $pdo->prepare('SELECT id FROM zillow_sale_listings WHERE id = ? AND is_active = 1 LIMIT 1');
 $exists->execute([$listingId]);
 if (!$exists->fetch()) {
     ts_fail('Listing not found', 404);

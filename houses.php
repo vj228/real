@@ -15,6 +15,7 @@ $rows = $pdo->query(
     'SELECT l.id, l.zpid, l.address, l.list_price, l.beds, l.baths, l.sqft, l.search_query, l.img_src, l.detail_url, l.created_at,
             (SELECT a.id FROM ai_analyses a WHERE a.listing_id = l.id ORDER BY a.analyzed_at DESC, a.id DESC LIMIT 1) AS analysis_id
      FROM zillow_sale_listings l
+     WHERE l.is_active = 1
      ORDER BY l.created_at DESC'
 )->fetchAll(PDO::FETCH_ASSOC);
 
@@ -146,8 +147,12 @@ function money($n): string
 
         <div class="houses-intro">
             <h1>Houses</h1>
-            <p class="houses-intro__count"><?= count($rows) ?> listings from Arcadia</p>
-            <p class="houses-intro__callout">Pick a home below → upload a walkthrough → get your renovation estimate.</p>
+            <p class="houses-intro__count"><?= count($rows) ?> active listings from Arcadia</p>
+            <?php if ($rows === []): ?>
+                <p class="houses-intro__callout">No active listings right now. Fresh homes will appear here after the next listing refresh.</p>
+            <?php else: ?>
+                <p class="houses-intro__callout">Pick a home below → upload a walkthrough → get your renovation estimate.</p>
+            <?php endif; ?>
         </div>
 
         <div class="houses-grid">

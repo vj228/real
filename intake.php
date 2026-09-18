@@ -1,6 +1,5 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/helpers/marketing_track.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -188,8 +187,6 @@ require_once __DIR__ . '/helpers/marketing_track.php';
     </section>
 </main>
 
-<script>window.YHOME_MARKETING_VISIT_ID=<?= json_encode($GLOBALS['_marketing_visit_id'] ?? null) ?>;</script>
-<script src="/js/cta_track.js" defer></script>
 <script src="/js/app.js" defer></script>
 </body>
 </html>

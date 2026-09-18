@@ -18,50 +18,96 @@ function ac_h(?string $s): string
 $pdo = db_pdo_connect();
 $error = null;
 $successCode = null;
+$successMsg = null;
 $nameVal = '';
 $emailVal = '';
 $codeVal = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $nameVal = trim((string) ($_POST['name'] ?? ''));
-    $emailVal = strtolower(trim((string) ($_POST['email'] ?? '')));
-    $codeVal = strtoupper(trim((string) ($_POST['referral_code'] ?? '')));
+    $action = trim((string) ($_POST['action'] ?? 'create'));
 
-    if (!$pdo instanceof PDO) {
-        $error = 'Database unavailable.';
-    } elseif ($codeVal === '') {
-        $error = 'Referral code is required.';
-    } elseif (agent_ref_normalize($codeVal) === null) {
-        $error = 'Use 3–32 characters: letters, numbers, underscore, or hyphen (e.g. AGT102).';
-    } elseif ($emailVal !== '' && !filter_var($emailVal, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Enter a valid email, or leave it blank.';
-    } elseif (strlen($nameVal) > 120) {
-        $error = 'Name is too long.';
-    } else {
-        $code = agent_ref_normalize($codeVal);
-        try {
-            $exists = $pdo->prepare('SELECT id FROM agents WHERE referral_code = ? LIMIT 1');
-            $exists->execute([$code]);
-            if ($exists->fetch()) {
-                $error = 'That referral code already exists.';
-            } else {
-                $ins = $pdo->prepare(
-                    'INSERT INTO agents (referral_code, name, email, is_active)
-                     VALUES (?, ?, ?, 1)'
+    if ($action === 'approve_claim') {
+        $listingId = (int) ($_POST['listing_id'] ?? 0);
+        if (!$pdo instanceof PDO) {
+            $error = 'Database unavailable.';
+        } elseif ($listingId <= 0) {
+            $error = 'Invalid listing.';
+        } else {
+            try {
+                $upd = $pdo->prepare(
+                    'UPDATE zillow_sale_listings
+                     SET listing_agent_claimed = 1
+                     WHERE id = ? AND listing_agent_claim_requested_at IS NOT NULL'
                 );
-                $ins->execute([
-                    $code,
-                    $nameVal,
-                    $emailVal !== '' ? $emailVal : null,
-                ]);
-                $successCode = $code;
-                $nameVal = '';
-                $emailVal = '';
-                $codeVal = '';
+                $upd->execute([$listingId]);
+                if ($upd->rowCount() > 0) {
+                    $successMsg = 'Approved claim for listing #' . $listingId . '. Phone & email are now public.';
+                } else {
+                    $error = 'No pending claim found for that listing.';
+                }
+            } catch (Throwable $e) {
+                $error = 'Could not approve claim: ' . $e->getMessage();
             }
-        } catch (Throwable $e) {
-            $error = 'Could not create agent: ' . $e->getMessage();
         }
+    } else {
+        $nameVal = trim((string) ($_POST['name'] ?? ''));
+        $emailVal = strtolower(trim((string) ($_POST['email'] ?? '')));
+        $codeVal = strtoupper(trim((string) ($_POST['referral_code'] ?? '')));
+
+        if (!$pdo instanceof PDO) {
+            $error = 'Database unavailable.';
+        } elseif ($codeVal === '') {
+            $error = 'Referral code is required.';
+        } elseif (agent_ref_normalize($codeVal) === null) {
+            $error = 'Use 3–32 characters: letters, numbers, underscore, or hyphen (e.g. AGT102).';
+        } elseif ($emailVal !== '' && !filter_var($emailVal, FILTER_VALIDATE_EMAIL)) {
+            $error = 'Enter a valid email, or leave it blank.';
+        } elseif (strlen($nameVal) > 120) {
+            $error = 'Name is too long.';
+        } else {
+            $code = agent_ref_normalize($codeVal);
+            try {
+                $exists = $pdo->prepare('SELECT id FROM agents WHERE referral_code = ? LIMIT 1');
+                $exists->execute([$code]);
+                if ($exists->fetch()) {
+                    $error = 'That referral code already exists.';
+                } else {
+                    $ins = $pdo->prepare(
+                        'INSERT INTO agents (referral_code, name, email, is_active)
+                         VALUES (?, ?, ?, 1)'
+                    );
+                    $ins->execute([
+                        $code,
+                        $nameVal,
+                        $emailVal !== '' ? $emailVal : null,
+                    ]);
+                    $successCode = $code;
+                    $nameVal = '';
+                    $emailVal = '';
+                    $codeVal = '';
+                }
+            } catch (Throwable $e) {
+                $error = 'Could not create agent: ' . $e->getMessage();
+            }
+        }
+    }
+}
+
+$pendingClaims = [];
+if ($pdo instanceof PDO) {
+    try {
+        $pendingClaims = $pdo->query(
+            'SELECT l.id, l.address, l.listing_agent_name, l.listing_agent_email, l.listing_agent_phone,
+                    l.listing_agent_claim_requested_at, a.referral_code, a.name AS partner_name, a.email AS partner_email
+             FROM zillow_sale_listings l
+             LEFT JOIN agents a ON a.id = l.listing_agent_claim_agent_id
+             WHERE l.listing_agent_claimed = 0
+               AND l.listing_agent_claim_requested_at IS NOT NULL
+             ORDER BY l.listing_agent_claim_requested_at DESC
+             LIMIT 50'
+        )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        $pendingClaims = [];
     }
 }
 
@@ -172,12 +218,12 @@ if ($codeVal === '' && $successCode === null) {
         <header class="site-header">
             <a class="site-logo" href="/">yHome.ai</a>
             <div class="site-header-actions">
-                <a href="/agent-dashboard.php" class="button button-nav-cta">Agent dashboard</a>
+                <a href="/agent-claims.php" class="button button-nav-cta">Listing claims</a>
             </div>
         </header>
 
         <h1>Create agent</h1>
-        <p class="lead">Add a partner and give them a referral code for property links.</p>
+        <p class="lead">Add a partner and give them a referral code for property links. Pending claims also appear on <a href="/agent-claims.php">Listing claims</a>.</p>
 
         <?php if ($successCode !== null): ?>
             <div class="ac-ok">
@@ -185,8 +231,40 @@ if ($codeVal === '' && $successCode === null) {
                 <a href="/agent-dashboard.php?code=<?= ac_h($successCode) ?>">Open their dashboard</a>
             </div>
         <?php endif; ?>
+        <?php if ($successMsg !== null): ?>
+            <div class="ac-ok"><?= ac_h($successMsg) ?></div>
+        <?php endif; ?>
+
+        <?php if ($pendingClaims !== []): ?>
+            <section class="ac-card" style="margin-bottom:20px;">
+                <h2 style="margin:0 0 12px;font-size:1.15rem;">Pending listing claims</h2>
+                <p class="hint" style="margin-top:0;">Verify the partner is the listing agent, then approve to unlock phone/email on the house page.</p>
+                <?php foreach ($pendingClaims as $pc): ?>
+                    <div style="padding:12px 0;border-top:1px solid var(--border);">
+                        <strong>#<?= (int) $pc['id'] ?></strong>
+                        — <?= ac_h((string) ($pc['address'] ?? '')) ?><br>
+                        Listing agent: <?= ac_h((string) ($pc['listing_agent_name'] ?? '—')) ?>
+                        · listing email <?= ac_h((string) ($pc['listing_agent_email'] ?? 'none')) ?><br>
+                        Claim login:
+                        <strong><?= ac_h((string) ($pc['partner_email'] ?? '—')) ?></strong>
+                        (<?= ac_h((string) ($pc['referral_code'] ?? '—')) ?>
+                        <?= ac_h((string) ($pc['partner_name'] ?? '')) ?>)
+                        <?php if (!empty($pc['listing_agent_claim_requested_at'])): ?>
+                            · <?= ac_h((string) $pc['listing_agent_claim_requested_at']) ?>
+                        <?php endif; ?>
+                        <form method="post" action="/agent-create.php" style="margin-top:10px;">
+                            <input type="hidden" name="action" value="approve_claim">
+                            <input type="hidden" name="listing_id" value="<?= (int) $pc['id'] ?>">
+                            <button type="submit" class="button button-primary">Approve &amp; unlock contact</button>
+                            <a class="button" href="/house.php?id=<?= (int) $pc['id'] ?>" style="margin-left:8px;">View listing</a>
+                        </form>
+                    </div>
+                <?php endforeach; ?>
+            </section>
+        <?php endif; ?>
 
         <form class="ac-card" method="post" action="/agent-create.php" autocomplete="off">
+            <input type="hidden" name="action" value="create">
             <?php if ($error): ?>
                 <p class="ac-error"><?= ac_h($error) ?></p>
             <?php endif; ?>
