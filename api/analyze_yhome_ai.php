@@ -280,7 +280,54 @@ function yai_outdoor_likelihood(string $path): float
 }
 
 /**
- * Heuristic kitchen likelihood 0..1 — hood metal (upper) + wood counter + dark cooktop.
+ * Detect floor plans / diagrams / maps (B&W line drawings) — not room photos.
+ */
+function yai_is_floor_plan(string $path): bool
+{
+    $loaded = yai_load_small($path, 96);
+    if ($loaded === null) {
+        return false;
+    }
+    $im = $loaded['im'];
+    $w = $loaded['w'];
+    $h = $loaded['h'];
+    $n = 0;
+    $satSum = 0.0;
+    $white = 0;
+    $nearBlack = 0;
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $c = imagecolorat($im, $x, $y);
+            $r = ($c >> 16) & 0xFF;
+            $g = ($c >> 8) & 0xFF;
+            $b = $c & 0xFF;
+            $lum = (0.299 * $r + 0.587 * $g + 0.114 * $b) / 255.0;
+            $mx = max($r, $g, $b);
+            $mn = min($r, $g, $b);
+            $sat = $mx > 0 ? ($mx - $mn) / $mx : 0.0;
+            $n++;
+            $satSum += $sat;
+            if ($lum > 0.88) {
+                $white++;
+            }
+            if ($lum < 0.22) {
+                $nearBlack++;
+            }
+        }
+    }
+    if ($n === 0) {
+        return false;
+    }
+    $satAvg = $satSum / $n;
+    $whiteF = $white / $n;
+    $blackF = $nearBlack / $n;
+
+    // Floor plans: grayscale paper + ink (no photographic color).
+    return $satAvg < 0.05 && $whiteF >= 0.45 && $blackF >= 0.08;
+}
+
+/**
+ * Kitchen likelihood 0..1 — requires cooktop/hood evidence (not steel walls/faucets).
  */
 function yai_kitchen_cue(string $path): float
 {
@@ -291,12 +338,14 @@ function yai_kitchen_cue(string $path): float
     $im = $loaded['im'];
     $w = $loaded['w'];
     $h = $loaded['h'];
-    $um = 0;
-    $un = 0;
-    $mw = 0;
-    $mn = 0;
-    $ld = 0;
-    $ln = 0;
+
+    $hoodDark = 0;
+    $hoodN = 0;
+    $cookDark = 0;
+    $cookN = 0;
+    $knobLike = 0;
+    $midN = 0;
+
     for ($y = 0; $y < $h; $y++) {
         for ($x = 0; $x < $w; $x++) {
             $c = imagecolorat($im, $x, $y);
@@ -304,33 +353,41 @@ function yai_kitchen_cue(string $path): float
             $g = ($c >> 8) & 0xFF;
             $b = $c & 0xFF;
             $lum = (0.299 * $r + 0.587 * $g + 0.114 * $b) / 255.0;
-            $metal = abs($r - $g) < 18 && abs($g - $b) < 18 && $lum > 0.38 && $lum < 0.8;
-            $wood = $r > $g + 8 && $g > $b + 8 && ($r - $b) > 28 && $lum > 0.28 && $lum < 0.82;
-            if ($y < $h * 0.5 && $x > $w * 0.35) {
-                $un++;
-                if ($metal) {
-                    $um++;
+            $neutral = abs($r - $g) < 20 && abs($g - $b) < 20;
+
+            // Dark angled hood / cooktop zone (upper-mid, centered)
+            if ($y > $h * 0.08 && $y < $h * 0.45 && $x > $w * 0.3 && $x < $w * 0.8) {
+                $hoodN++;
+                if ($neutral && $lum < 0.22) {
+                    $hoodDark++;
                 }
             }
-            if ($y >= $h * 0.3 && $y <= $h * 0.65 && $x > $w * 0.25) {
-                $mn++;
-                if ($wood) {
-                    $mw++;
+            // Cooktop slab — dark horizontal band mid-frame
+            if ($y > $h * 0.35 && $y < $h * 0.65 && $x > $w * 0.25 && $x < $w * 0.85) {
+                $cookN++;
+                if ($neutral && $lum < 0.22) {
+                    $cookDark++;
                 }
-            }
-            if ($y > $h * 0.5 && $x > $w * 0.4) {
-                $ln++;
-                if ($lum < 0.2) {
-                    $ld++;
+                $midN++;
+                // Gas grate / control knobs: tiny dark dots on lighter counter
+                if ($lum < 0.25 && $neutral) {
+                    $knobLike++;
                 }
             }
         }
     }
-    $U = $un > 0 ? $um / $un : 0.0;
-    $W = $mn > 0 ? $mw / $mn : 0.0;
-    $D = $ln > 0 ? $ld / $ln : 0.0;
 
-    return max(0.0, min(1.0, $U * (0.5 + 2.0 * $D) * (0.5 + 1.5 * $W) * 4.0));
+    $hood = $hoodN > 0 ? $hoodDark / $hoodN : 0.0;
+    $cook = $cookN > 0 ? $cookDark / $cookN : 0.0;
+    $knobs = $midN > 0 ? $knobLike / $midN : 0.0;
+
+    // Real kitchens usually show a dark cooktop or hood; without that, stay low.
+    $score = max($cook * 5.5, $hood * 4.5, $knobs * 2.2);
+    if ($cook < 0.03 && $hood < 0.03) {
+        $score *= 0.25;
+    }
+
+    return max(0.0, min(1.0, $score));
 }
 
 /**
@@ -350,10 +407,18 @@ function yai_room_cues(string $path): array
     $white = 0;
     $warmSoft = 0;
     $neutralWall = 0;
-    $darkHoriz = 0;
     $n = 0;
     $midBand = 0;
     $midDark = 0;
+    $tileWhiteLow = 0;
+    $lowN = 0;
+    $glassEdge = 0;
+    $glassN = 0;
+    $prevLum = null;
+    $furnMass = 0;
+    $furnN = 0;
+    $floorWood = 0;
+    $floorN = 0;
     for ($y = 0; $y < $h; $y++) {
         for ($x = 0; $x < $w; $x++) {
             $c = imagecolorat($im, $x, $y);
@@ -375,10 +440,37 @@ function yai_room_cues(string $path): array
                 $midBand++;
                 if ($lum < 0.28) {
                     $midDark++;
-                    $darkHoriz++;
                 }
             }
+            if ($y > $h * 0.5) {
+                $lowN++;
+                if ($lum > 0.75 && abs($r - $g) < 20 && abs($g - $b) < 20) {
+                    $tileWhiteLow++;
+                }
+            }
+            // Shower glass / framed glass: high local contrast on sides
+            if ($x < $w * 0.28 || $x > $w * 0.72) {
+                $glassN++;
+                if ($prevLum !== null && abs($lum - $prevLum) > 0.35) {
+                    $glassEdge++;
+                }
+            }
+            if ($y > $h * 0.48 && $y < $h * 0.85) {
+                $furnN++;
+                // Soft sofa/cushion tones occupying lower half
+                if ($lum > 0.5 && $lum < 0.95 && abs($r - $g) < 28 && abs($g - $b) < 28) {
+                    $furnMass++;
+                }
+            }
+            if ($y > $h * 0.72) {
+                $floorN++;
+                if ($r > $g + 6 && $g > $b && $lum > 0.3 && $lum < 0.8) {
+                    $floorWood++;
+                }
+            }
+            $prevLum = $lum;
         }
+        $prevLum = null;
     }
     if ($n === 0) {
         return ['bathroom' => 0.0, 'bedroom' => 0.0, 'living' => 0.0, 'interior' => 0.0];
@@ -387,9 +479,18 @@ function yai_room_cues(string $path): array
     $wallF = $neutralWall / $n;
     $warmF = $warmSoft / $n;
     $bedBand = $midBand > 0 ? $midDark / $midBand : 0.0;
-    $bathroom = max(0.0, min(1.0, 2.4 * $whiteF + 0.4 * $wallF));
+    $tileLow = $lowN > 0 ? $tileWhiteLow / $lowN : 0.0;
+    $glassF = $glassN > 0 ? $glassEdge / $glassN : 0.0;
+    $furnF = $furnN > 0 ? $furnMass / $furnN : 0.0;
+    $floorF = $floorN > 0 ? $floorWood / $floorN : 0.0;
+
+    $bathroom = max(0.0, min(1.0, 1.8 * $tileLow + 0.9 * $glassF + 0.4 * $whiteF));
+    // Without lower-frame tile, glass/door frames alone must not look like a bath.
+    if ($tileLow < 0.12) {
+        $bathroom *= 0.35;
+    }
     $bedroom = max(0.0, min(1.0, 1.6 * $bedBand + 0.8 * $warmF));
-    $living = max(0.0, min(1.0, 1.1 * $wallF + 0.7 * $warmF + 0.5 * (1.0 - $whiteF)));
+    $living = max(0.0, min(1.0, 0.85 * $furnF + 0.5 * $wallF + 0.4 * $floorF));
     $interior = max(0.0, min(1.0, 0.9 * $wallF + 0.5 * $warmF + 0.35 * $whiteF + 0.4 * $bedBand));
 
     return [
@@ -428,6 +529,16 @@ function yai_classify_house_frame(string $path, int $index, int $total): array
             'kitchen' => $kitchen,
             'sharp' => $sharp,
             'reason' => 'blank/black frame',
+        ];
+    }
+    if (yai_is_floor_plan($path)) {
+        return [
+            'house' => false,
+            'guess' => 'diagram',
+            'outdoor' => $outdoor,
+            'kitchen' => $kitchen,
+            'sharp' => $sharp,
+            'reason' => 'floor plan / diagram',
         ];
     }
     if ($outdoor >= YAI_OUTDOOR_REJECT) {
@@ -469,9 +580,25 @@ function yai_classify_house_frame(string $path, int $index, int $total): array
         'bedroom' => $cues['bedroom'],
         'living' => $cues['living'],
     ];
+    // Strong cooktop/hood → kitchen wins over living/bedroom furniture cues.
+    if ($kitchen >= 0.28) {
+        $scores['kitchen'] = max($scores['kitchen'], min(1.0, $kitchen + 0.35));
+        $scores['living'] *= 0.4;
+        $scores['bedroom'] *= 0.4;
+    } elseif ($scores['kitchen'] < $scores['living'] + 0.1) {
+        $scores['kitchen'] *= 0.4;
+    }
+    // Bathroom tile/glass should beat kitchen cabinets when cooktop is absent.
+    if ($cues['bathroom'] >= 0.5 && $kitchen < 0.28) {
+        $scores['bathroom'] = max($scores['bathroom'], min(1.0, $cues['bathroom'] + 0.35));
+        $scores['kitchen'] *= 0.35;
+        $scores['living'] *= 0.45;
+        $scores['bedroom'] *= 0.45;
+    }
     arsort($scores);
     $guess = (string) array_key_first($scores);
     $best = (float) ($scores[$guess] ?? 0.0);
+    $second = (float) (array_values($scores)[1] ?? 0.0);
     // Soft/blurry interiors still count as house (kitchen walk-ins)
     $house = $outdoor < YAI_OUTDOOR_REJECT && (
         $cues['interior'] >= 0.18
@@ -491,6 +618,8 @@ function yai_classify_house_frame(string $path, int $index, int $total): array
     }
     if ($best < 0.22 && $kitchen < 0.3) {
         $guess = 'interior';
+    } elseif ($best - $second < 0.05 && in_array($guess, ['kitchen', 'bathroom'], true) && $scores['living'] >= 0.4) {
+        $guess = 'living';
     }
 
     return [
@@ -1013,6 +1142,138 @@ function yai_clamp_prose(string $text, int $maxChars): string
 }
 
 /**
+ * Correct Gemini room buckets using strong local cues only.
+ * Weak local guesses must not override Gemini (they used to force every sofa into kitchen).
+ *
+ * @param list<array<string,mixed>> $rooms
+ * @param list<array<string,mixed>> $frames
+ * @return list<array<string,mixed>>
+ */
+function yai_realign_rooms_by_local_guess(array $rooms, array $frames): array
+{
+    $guessOf = [];
+    $kitchenCue = [];
+    $bathCue = [];
+    $liveCue = [];
+    foreach ($frames as $i => $f) {
+        $path = (string) ($f['path'] ?? '');
+        if ($path !== '' && is_readable($path) && yai_is_floor_plan($path)) {
+            $guessOf[(int) $i] = 'diagram';
+            continue;
+        }
+        $g = yai_normalize_room((string) ($f['local_guess'] ?? ''));
+        if ($g !== '') {
+            $guessOf[(int) $i] = $g;
+        }
+        if ($path !== '' && is_readable($path)) {
+            $cues = yai_room_cues($path);
+            $kitchenCue[(int) $i] = yai_kitchen_cue($path);
+            $bathCue[(int) $i] = $cues['bathroom'];
+            $liveCue[(int) $i] = $cues['living'];
+        }
+    }
+
+    $donors = [];
+    foreach ($rooms as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $room = yai_normalize_room((string) ($row['room'] ?? ''));
+        if ($room === '') {
+            continue;
+        }
+        $donors[$room] = $row;
+    }
+
+    $buckets = [];
+    foreach ($rooms as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $idxs = $row['images'] ?? $row['image_indexes'] ?? [];
+        if (!is_array($idxs)) {
+            $idxs = [];
+        }
+        $geminiRoom = yai_normalize_room((string) ($row['room'] ?? ''));
+        foreach ($idxs as $i) {
+            $i = (int) $i;
+            $local = $guessOf[$i] ?? '';
+            if ($local === 'diagram') {
+                continue; // drop floor plans / maps
+            }
+            $kit = (float) ($kitchenCue[$i] ?? 0);
+            $bath = (float) ($bathCue[$i] ?? 0);
+            $live = (float) ($liveCue[$i] ?? 0);
+            $target = $geminiRoom;
+            // Strong local corrections only
+            if ($kit >= 0.28) {
+                $target = 'kitchen';
+            } elseif ($bath >= 0.42 && $kit < 0.25 && $bath + 0.05 >= $live) {
+                $target = 'bathroom';
+            } elseif ($geminiRoom === 'bathroom' && $bath < 0.32 && $live > $bath + 0.25 && $kit < 0.25) {
+                // Living/dining with white walls wrongly labeled as bath
+                $target = 'living';
+            } elseif ($local === 'living' && $geminiRoom === 'kitchen' && $kit < 0.25) {
+                $target = 'living';
+            } elseif ($local === 'bedroom' && $geminiRoom === 'kitchen' && $kit < 0.25) {
+                $target = 'bedroom';
+            } elseif ($local === 'bathroom' && $geminiRoom === 'kitchen' && $kit < 0.25 && $bath >= 0.4) {
+                $target = 'bathroom';
+            }
+            if ($target === '' || !in_array($target, YAI_ROOMS, true)) {
+                continue;
+            }
+            if (!isset($buckets[$target])) {
+                $buckets[$target] = ['idxs' => [], 'from' => []];
+            }
+            $buckets[$target]['idxs'][$i] = true;
+            if ($geminiRoom !== '') {
+                $buckets[$target]['from'][$geminiRoom] = ($buckets[$target]['from'][$geminiRoom] ?? 0) + 1;
+            }
+        }
+    }
+
+    $out = [];
+    foreach ($buckets as $room => $bag) {
+        $idxs = array_map('intval', array_keys($bag['idxs']));
+        sort($idxs);
+        if ($idxs === []) {
+            continue;
+        }
+        $donorKey = $room;
+        if (!isset($donors[$donorKey]) && $bag['from'] !== []) {
+            arsort($bag['from']);
+            $donorKey = (string) array_key_first($bag['from']);
+        }
+        $donor = $donors[$donorKey] ?? ($donors[$room] ?? null);
+        if (!is_array($donor)) {
+            $out[] = [
+                'room' => $room,
+                'condition_score' => 78,
+                'confidence' => 0.7,
+                'summary' => ucfirst($room) . ' visible in tour frames.',
+                'observations' => [],
+                'recommended_work' => [],
+                'images' => $idxs,
+            ];
+            continue;
+        }
+        $row = $donor;
+        $row['room'] = $room;
+        $row['images'] = $idxs;
+        // Don't reuse kitchen narrative on living/bath after a move
+        if ($donorKey !== $room) {
+            $row['summary'] = ucfirst($room) . ' visible in tour frames.';
+            $row['observations'] = [];
+            $row['recommended_work'] = [];
+        }
+        $out[] = $row;
+    }
+
+    return $out !== [] ? $out : $rooms;
+}
+
+/**
  * Price Gemini work recommendations in PHP (never trust AI dollars).
  *
  * @param list<array<string,mixed>> $rooms
@@ -1499,7 +1760,10 @@ foreach ($frames as $i => $frame) {
     }
     $totalBytes += strlen($bin);
     $guess = $frame['local_guess'] ?? 'interior';
-    $parts[] = ['text' => 'IMAGE #' . $i . ' (local pre-label: ' . $guess . ', t=' . $frame['time_sec'] . 's)'];
+    $parts[] = ['text' => 'IMAGE #' . $i . ' (t=' . $frame['time_sec'] . 's).'
+        . ' Local hint (may be wrong): ' . $guess
+        . '. Classify the room from what you SEE (kitchen / living / bathroom / bedroom).'
+        . ' Put this image only under the room type that matches the photo.'];
     $parts[] = [
         'inline_data' => [
             'mime_type' => 'image/jpeg',
@@ -1510,8 +1774,14 @@ foreach ($frames as $i => $frame) {
 
 $codesList = implode(', ', renovation_allowed_codes());
 $prompt = 'You assess visible room condition from house-tour frames for buyer due-diligence.
-Images were pre-filtered to interiors. Each photo is IMAGE #N (local pre-label is a hint only).
-Only rooms: kitchen, living, bathroom, bedroom. One entry per room type that appears (merge all images of that room into ONE assessment).
+Images were pre-filtered to interiors (floor plans, maps, and exteriors removed).
+For each IMAGE #, decide the room type from visual content: kitchen, living, bathroom, or bedroom.
+- kitchen = cooktop/range/hood/cabinets+sink work zone (NOT living rooms with sofas)
+- living = sofa/lounge/family room seating areas
+- bathroom = vanity/toilet/shower/tub (NOT floor plans)
+- bedroom = bed or clear sleeping room
+Create one rooms[] entry per room type that appears. Merge all images of that room into ONE assessment.
+Assign each IMAGE # only to the room that matches what is actually shown.
 Do NOT invent dollar amounts. Do NOT assess hidden plumbing, electrical, structural, HVAC, roof, mold, foundation, or anything not visible.
 
 IGNORE ALL FURNITURE in every room (sofas, chairs, tables, beds, rugs, decor, staging items, freestanding pieces). Never recommend work for furniture and never let furniture condition affect scores or recommended_work.
@@ -1735,7 +2005,13 @@ $log[] = 'Gemini raw rooms (' . count($geminiRooms) . '): '
         return $r['room'] . '/score=' . $score . ' work=' . $workN . ' imgs=[' . $imgs . ']';
     }, $geminiRooms)) . '.';
 
-$estimate = yai_estimate($parsed['rooms'], $frames);
+$aligned = yai_realign_rooms_by_local_guess($parsed['rooms'], $frames);
+if (count($aligned) !== count($parsed['rooms'])
+    || array_column($aligned, 'room') != array_column($parsed['rooms'], 'room')) {
+    $log[] = 'Realigned rooms by local frame guesses: '
+        . implode(', ', array_map(static fn ($r) => (string) ($r['room'] ?? '?'), $aligned)) . '.';
+}
+$estimate = yai_estimate($aligned, $frames);
 foreach ($estimate['rooms'] as $er) {
     $log[] = ucfirst((string) $er['room']) . ' score ' . $er['condition_score']
         . '/100 → budget $' . number_format((int) $er['estimate_low'])

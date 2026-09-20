@@ -55,12 +55,139 @@ function house_youtube_id(?string $url): ?string
     if ($id === null) {
         return null;
     }
-    // Upload jobs use ids like upl_9f9bc4c8 (also 11 chars) — not real YouTube.
     if (str_starts_with($id, 'upl_')) {
         return null;
     }
 
     return $id;
+}
+
+/**
+ * Resolve playable media URL for an analysis job.
+ *
+ * @return array{youtube_id:?string,local_url:?string}
+ */
+function house_media_for_job(PDO $pdo, string $jobId): array
+{
+    $ytId = null;
+    $localVideoUrl = null;
+    if ($jobId !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $jobId)) {
+        foreach (['mp4', 'mov', 'webm', 'mkv', 'm4v', 'avi'] as $ext) {
+            $candidate = __DIR__ . '/yhome_ai/' . $jobId . '/source.' . $ext;
+            if (is_readable($candidate)) {
+                // Stream via PHP with Range support — static files on `php -S`
+                // (and some CDNs) break HTML5 seeking without Accept-Ranges.
+                $localVideoUrl = '/api/stream_job_video.php?job=' . rawurlencode($jobId)
+                    . '&v=' . (int) filemtime($candidate) . '.' . (int) filesize($candidate);
+                break;
+            }
+        }
+        // File-upload jobs: fall back to original submission video on this host
+        if ($localVideoUrl === null) {
+            try {
+                $subStmt = $pdo->prepare(
+                    'SELECT id, stored_path FROM house_tour_submissions
+                     WHERE job_id = ? AND source = \'upload\'
+                     ORDER BY id DESC LIMIT 1'
+                );
+                $subStmt->execute([$jobId]);
+                $sub = $subStmt->fetch(PDO::FETCH_ASSOC);
+                if ($sub) {
+                    $rel = ltrim(str_replace('\\', '/', (string) ($sub['stored_path'] ?? '')), '/');
+                    $abs = $rel !== '' ? __DIR__ . '/' . $rel : '';
+                    if ($jobId !== '' && $abs !== '' && is_readable($abs)) {
+                        $localVideoUrl = '/api/stream_job_video.php?job=' . rawurlencode($jobId)
+                            . '&v=' . (int) filemtime($abs) . '.' . (int) filesize($abs);
+                    } elseif ((int) ($sub['id'] ?? 0) > 0) {
+                        $localVideoUrl = '/api/tour_file.php?id=' . (int) $sub['id']
+                            . '&v=' . time();
+                    }
+                }
+            } catch (Throwable $e) {
+                // ignore
+            }
+        }
+    }
+
+    return ['youtube_id' => $ytId, 'local_url' => $localVideoUrl];
+}
+
+/**
+ * @param array<string,mixed> $analysisRow
+ * @return array<string,mixed>|null
+ */
+function house_parse_analysis_row(array $analysisRow, int $videoNumber): ?array
+{
+    $payload = json_decode((string) ($analysisRow['rooms_json'] ?? ''), true);
+    if (!is_array($payload)) {
+        $payload = [];
+    }
+    $isV2 = isset($payload['rooms']) && is_array($payload['rooms']);
+    if ($isV2) {
+        $rooms = $payload['rooms'];
+        $overallScore = isset($payload['overall_score']) ? (int) $payload['overall_score'] : null;
+        $overallLabel = (string) ($payload['overall_label'] ?? '');
+        $requiredLow = (int) ($payload['required_low'] ?? 0);
+        $requiredHigh = (int) ($payload['required_high'] ?? 0);
+        $recommendedLow = (int) ($payload['recommended_low'] ?? 0);
+        $recommendedHigh = (int) ($payload['recommended_high'] ?? 0);
+        $optionalLow = (int) ($payload['optional_low'] ?? 0);
+        $optionalHigh = (int) ($payload['optional_high'] ?? 0);
+        $disclaimer = (string) ($payload['disclaimer'] ?? '');
+    } else {
+        $rooms = $payload;
+        $overallScore = null;
+        $overallLabel = '';
+        $requiredLow = null;
+        $requiredHigh = null;
+        $recommendedLow = null;
+        $recommendedHigh = null;
+        $optionalLow = null;
+        $optionalHigh = null;
+        $disclaimer = '';
+    }
+    if ($disclaimer === '') {
+        $disclaimer = 'AI estimate based on visible conditions in the provided images. Hidden plumbing, electrical, structural, HVAC, roofing, moisture, mold, foundation and other concealed conditions are not included. Actual contractor pricing may vary.';
+    }
+
+    require_once __DIR__ . '/helpers/yai_frame_dedupe.php';
+    if (is_array($rooms)) {
+        foreach ($rooms as &$roomRow) {
+            if (!is_array($roomRow)) {
+                continue;
+            }
+            $imgs = $roomRow['images'] ?? [];
+            if (!is_array($imgs) || $imgs === []) {
+                continue;
+            }
+            $roomRow['images'] = yai_dedupe_room_images($imgs, __DIR__);
+        }
+        unset($roomRow);
+    }
+    if (!is_array($rooms) || $rooms === []) {
+        return null;
+    }
+
+    return [
+        'analysis_id' => (int) ($analysisRow['id'] ?? 0),
+        'rooms' => $rooms,
+        'overall_score' => $overallScore,
+        'overall_label' => $overallLabel,
+        'required_low' => $requiredLow,
+        'required_high' => $requiredHigh,
+        'recommended_low' => $recommendedLow,
+        'recommended_high' => $recommendedHigh,
+        'optional_low' => $optionalLow,
+        'optional_high' => $optionalHigh,
+        'total_low' => (int) ($analysisRow['total_low'] ?? 0),
+        'total_high' => (int) ($analysisRow['total_high'] ?? 0),
+        'disclaimer' => $disclaimer,
+        'job_id' => (string) ($analysisRow['job_id'] ?? ''),
+        'youtube_url' => $analysisRow['youtube_url'] ?? null,
+        'video_title' => $analysisRow['video_title'] ?? null,
+        'analyzed_at' => $analysisRow['analyzed_at'] ?? null,
+        'video_number' => $videoNumber,
+    ];
 }
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -129,140 +256,29 @@ $aStmt = $pdo->prepare(
 $aStmt->execute([$id]);
 $analysisRows = $aStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$tourVideos = [];
+/** @var list<array{analysis:array<string,mixed>,youtube_id:?string,local_url:?string}> $estimates */
+$estimates = [];
 foreach ($analysisRows as $i => $row) {
-    $num = $i + 1;
-    $jobId = trim((string) ($row['job_id'] ?? ''));
-    $ytId = house_youtube_id(isset($row['youtube_url']) ? (string) $row['youtube_url'] : null);
-    $localVideoUrl = null;
-    if ($jobId !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $jobId)) {
-        foreach (['mp4', 'mov', 'webm', 'mkv', 'm4v', 'avi'] as $ext) {
-            $candidate = __DIR__ . '/yhome_ai/' . $jobId . '/source.' . $ext;
-            if (is_readable($candidate)) {
-                $localVideoUrl = '/yhome_ai/' . rawurlencode($jobId) . '/source.' . $ext;
-                break;
-            }
-        }
-        // File-upload jobs: fall back to original submission video on this host
-        if ($localVideoUrl === null) {
-            try {
-                $subStmt = $pdo->prepare(
-                    'SELECT id, stored_path FROM house_tour_submissions
-                     WHERE job_id = ? AND source = \'upload\'
-                     ORDER BY id DESC LIMIT 1'
-                );
-                $subStmt->execute([$jobId]);
-                $sub = $subStmt->fetch(PDO::FETCH_ASSOC);
-                if ($sub) {
-                    $rel = ltrim(str_replace('\\', '/', (string) ($sub['stored_path'] ?? '')), '/');
-                    if ($rel !== '' && is_readable(__DIR__ . '/' . $rel)) {
-                        $localVideoUrl = '/' . $rel;
-                    } elseif ((int) ($sub['id'] ?? 0) > 0) {
-                        $localVideoUrl = '/api/tour_file.php?id=' . (int) $sub['id'];
-                    }
-                }
-            } catch (Throwable $e) {
-                // Older DBs may lack the table; leave localVideoUrl null.
-            }
-        }
+    $parsed = house_parse_analysis_row($row, $i + 1);
+    if ($parsed === null) {
+        continue;
     }
-    // Prefer uploaded file over a mistaken YouTube id
+    $jobId = trim((string) ($row['job_id'] ?? ''));
+    $media = house_media_for_job($pdo, $jobId);
+    $ytId = house_youtube_id(isset($row['youtube_url']) ? (string) $row['youtube_url'] : null);
+    $localVideoUrl = $media['local_url'];
     if ($localVideoUrl !== null) {
         $ytId = null;
     }
-    if ($ytId === null && $localVideoUrl === null) {
-        // Still list the slot so numbering stays stable even if media is missing.
-        $tourVideos[] = [
-            'number' => $num,
-            'analysis_id' => (int) $row['id'],
-            'youtube_id' => null,
-            'local_url' => null,
-            'analyzed_at' => $row['analyzed_at'],
-        ];
-        continue;
-    }
-    $tourVideos[] = [
-        'number' => $num,
-        'analysis_id' => (int) $row['id'],
+    $estimates[] = [
+        'analysis' => $parsed,
         'youtube_id' => $ytId,
         'local_url' => $localVideoUrl,
-        'analyzed_at' => $row['analyzed_at'],
     ];
 }
 
-$analysisRow = $analysisRows !== [] ? $analysisRows[count($analysisRows) - 1] : false;
-$estimateVideoNumber = $tourVideos !== [] ? (int) $tourVideos[count($tourVideos) - 1]['number'] : 1;
-
-$analysis = null;
-if ($analysisRow) {
-    $payload = json_decode((string) $analysisRow['rooms_json'], true);
-    if (!is_array($payload)) {
-        $payload = [];
-    }
-    $isV2 = isset($payload['rooms']) && is_array($payload['rooms']);
-    if ($isV2) {
-        $rooms = $payload['rooms'];
-        $overallScore = isset($payload['overall_score']) ? (int) $payload['overall_score'] : null;
-        $overallLabel = (string) ($payload['overall_label'] ?? '');
-        $requiredLow = (int) ($payload['required_low'] ?? 0);
-        $requiredHigh = (int) ($payload['required_high'] ?? 0);
-        $recommendedLow = (int) ($payload['recommended_low'] ?? 0);
-        $recommendedHigh = (int) ($payload['recommended_high'] ?? 0);
-        $optionalLow = (int) ($payload['optional_low'] ?? 0);
-        $optionalHigh = (int) ($payload['optional_high'] ?? 0);
-        $disclaimer = (string) ($payload['disclaimer'] ?? '');
-    } else {
-        $rooms = $payload;
-        $overallScore = null;
-        $overallLabel = '';
-        $requiredLow = null;
-        $requiredHigh = null;
-        $recommendedLow = null;
-        $recommendedHigh = null;
-        $optionalLow = null;
-        $optionalHigh = null;
-        $disclaimer = '';
-    }
-    if ($disclaimer === '') {
-        $disclaimer = 'AI estimate based on visible conditions in the provided images. Hidden plumbing, electrical, structural, HVAC, roofing, moisture, mold, foundation and other concealed conditions are not included. Actual contractor pricing may vary.';
-    }
-
-    // Drop missing / near-duplicate room thumbnails before render
-    require_once __DIR__ . '/helpers/yai_frame_dedupe.php';
-    if (is_array($rooms)) {
-        foreach ($rooms as &$roomRow) {
-            if (!is_array($roomRow)) {
-                continue;
-            }
-            $imgs = $roomRow['images'] ?? [];
-            if (!is_array($imgs) || $imgs === []) {
-                continue;
-            }
-            $roomRow['images'] = yai_dedupe_room_images($imgs, __DIR__);
-        }
-        unset($roomRow);
-    }
-
-    $analysis = [
-        'rooms' => $rooms,
-        'overall_score' => $overallScore,
-        'overall_label' => $overallLabel,
-        'required_low' => $requiredLow,
-        'required_high' => $requiredHigh,
-        'recommended_low' => $recommendedLow,
-        'recommended_high' => $recommendedHigh,
-        'optional_low' => $optionalLow,
-        'optional_high' => $optionalHigh,
-        'total_low' => (int) $analysisRow['total_low'],
-        'total_high' => (int) $analysisRow['total_high'],
-        'disclaimer' => $disclaimer,
-        'job_id' => (string) $analysisRow['job_id'],
-        'youtube_url' => $analysisRow['youtube_url'],
-        'video_title' => $analysisRow['video_title'],
-        'analyzed_at' => $analysisRow['analyzed_at'],
-        'video_number' => $estimateVideoNumber,
-    ];
-}
+// Hero CTA uses the latest estimate.
+$analysis = $estimates !== [] ? $estimates[count($estimates) - 1]['analysis'] : null;
 
 $address = (string) $listing['address'];
 $img = $listing['img_src'] !== null ? (string) $listing['img_src'] : '';
@@ -275,6 +291,7 @@ $facts = array_filter([
     $sqft !== null ? $sqft . ' sqft' : null,
 ]);
 $hasEstimate = is_array($analysis) && !empty($analysis['rooms']);
+$multiEstimates = count($estimates) > 1;
 $pageTitle = $address . ' — Renovation estimate | yHome';
 ?>
 <!DOCTYPE html>
@@ -899,11 +916,20 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             background: #edf6f1;
             cursor: zoom-in;
         }
-        .estimate-video {
-            margin: 14px 0 20px;
+        .estimate-block + .estimate-block {
+            margin-top: 36px;
+            padding-top: 28px;
+            border-top: 1px solid var(--border);
         }
-        .estimate-video + .estimate-video {
-            margin-top: 8px;
+        .estimate-block__heading {
+            margin: 0 0 12px;
+            font-size: 1.05rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--text);
+        }
+        .estimate-video {
+            margin: 0 0 18px;
         }
         .estimate-video__title {
             margin: 0 0 10px;
@@ -933,6 +959,58 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             height: 100%;
             border: 0;
             background: #000;
+        }
+        .tour-player {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+        }
+        .tour-player video {
+            position: relative !important;
+            inset: auto !important;
+            flex: 1 1 auto;
+            width: 100%;
+            height: auto;
+            min-height: 0;
+            object-fit: contain;
+            background: #000;
+        }
+        .tour-player__bar {
+            flex: 0 0 auto;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: rgba(15, 23, 42, 0.92);
+            color: #fff;
+        }
+        .tour-player__btn {
+            border: 0;
+            background: #fff;
+            color: #0f172a;
+            width: 36px;
+            height: 36px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 800;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .tour-player__seek {
+            width: 100%;
+            accent-color: #4ade80;
+            cursor: pointer;
+        }
+        .tour-player__time {
+            font-size: 0.78rem;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            opacity: 0.9;
+            min-width: 7.5rem;
+            text-align: right;
         }
         .estimate-video__link {
             display: inline-block;
@@ -1164,165 +1242,174 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                 <?php if (!$hasEstimate): ?>
                     <p class="estimate-empty">No estimate yet. <a href="#upload" data-open-upload>Upload a house-tour video</a> to generate one for this home.</p>
                 <?php else: ?>
-                    <?php
-                    $rooms = $analysis['rooms'];
-                    $hasScores = false;
-                    foreach ($rooms as $r) {
-                        if (!is_array($r)) {
-                            continue;
-                        }
-                        if (isset($r['condition_score']) || !empty($r['recommended_work'])) {
-                            $hasScores = true;
-                            break;
-                        }
-                    }
-                    ?>
-                    <?php foreach ($tourVideos as $vid): ?>
+                    <?php foreach ($estimates as $estIdx => $est): ?>
                         <?php
-                        $ytId = $vid['youtube_id'];
-                        $localVideoUrl = $vid['local_url'];
-                        if ($ytId === null && $localVideoUrl === null) {
-                            continue;
+                        $block = $est['analysis'];
+                        $rooms = $block['rooms'];
+                        $ytId = $est['youtube_id'];
+                        $localVideoUrl = $est['local_url'];
+                        $videoNumber = (int) ($block['video_number'] ?? ($estIdx + 1));
+                        $hasScores = false;
+                        foreach ($rooms as $r) {
+                            if (!is_array($r)) {
+                                continue;
+                            }
+                            if (isset($r['condition_score']) || !empty($r['recommended_work'])) {
+                                $hasScores = true;
+                                break;
+                            }
                         }
-                        $isEstimateSource = (int) $vid['number'] === (int) ($analysis['video_number'] ?? 0);
                         ?>
-                        <div class="estimate-video">
-                            <p class="estimate-video__title">
-                                Video <?= (int) $vid['number'] ?>
-                                <?php if ($isEstimateSource): ?>
-                                    <span>· used for this estimate</span>
-                                <?php endif; ?>
-                            </p>
-                            <div class="estimate-video__frame">
-                                <?php if ($localVideoUrl !== null): ?>
-                                    <video controls playsinline preload="metadata"
-                                           src="<?= house_h((string) $localVideoUrl) ?>"
-                                           title="Uploaded house tour video <?= (int) $vid['number'] ?>"></video>
-                                <?php elseif ($ytId !== null): ?>
-                                    <iframe
-                                        src="https://www.youtube-nocookie.com/embed/<?= house_h((string) $ytId) ?>"
-                                        title="House tour video <?= (int) $vid['number'] ?>"
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                        allowfullscreen
-                                        loading="lazy"
-                                        referrerpolicy="strict-origin-when-cross-origin"></iframe>
-                                <?php endif; ?>
-                            </div>
-                            <?php if ($localVideoUrl === null && $ytId !== null): ?>
-                                <a class="estimate-video__link"
-                                   href="https://www.youtube.com/watch?v=<?= house_h((string) $ytId) ?>"
-                                   target="_blank" rel="noopener">Open on YouTube</a>
+                        <div class="estimate-block" id="estimate-<?= $videoNumber ?>">
+                            <?php if ($multiEstimates): ?>
+                                <h3 class="estimate-block__heading">Estimate from video <?= $videoNumber ?></h3>
                             <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
 
-                    <?php if ($hasScores && $analysis['overall_score'] !== null): ?>
-                        <p class="estimate-overall">
-                            Overall visible condition · <?= (int) $analysis['overall_score'] ?>/100
-                            <?php if ($analysis['overall_label'] !== ''): ?>
-                                (<?= house_h($analysis['overall_label']) ?>)
-                            <?php endif; ?>
-                        </p>
-                        <div class="budget-row"><span>Required repairs</span><span><?= house_h(house_money($analysis['required_low'])) ?> – <?= house_h(house_money($analysis['required_high'])) ?></span></div>
-                        <div class="budget-row"><span>Recommended improvements</span><span><?= house_h(house_money($analysis['recommended_low'])) ?> – <?= house_h(house_money($analysis['recommended_high'])) ?></span></div>
-                        <div class="budget-row"><span>Optional modernization</span><span><?= house_h(house_money($analysis['optional_low'])) ?> – <?= house_h(house_money($analysis['optional_high'])) ?></span></div>
-                        <div class="budget-row"><span>Potential total budget</span><span><?= house_h(house_money($analysis['total_low'])) ?> – <?= house_h(house_money($analysis['total_high'])) ?></span></div>
-                    <?php else: ?>
-                        <p class="estimate-overall">Potential total · <?= house_h(house_money($analysis['total_low'])) ?> – <?= house_h(house_money($analysis['total_high'])) ?></p>
-                    <?php endif; ?>
-
-                    <?php foreach ($rooms as $r): ?>
-                        <?php
-                        if (!is_array($r)) {
-                            continue;
-                        }
-                        $roomName = (string) ($r['room'] ?? 'Room');
-                        $summary = (string) ($r['summary'] ?? $r['note'] ?? '—');
-                        $images = is_array($r['images'] ?? null) ? $r['images'] : [];
-                        ?>
-                        <div class="room-block">
-                            <?php if ($hasScores && isset($r['condition_score'])): ?>
-                                <?php
-                                $score = (int) $r['condition_score'];
-                                $tone = house_score_tone($score);
-                                $label = (string) ($r['condition_label'] ?? renovation_score_label($score));
-                                ?>
-                                <div class="room-head">
-                                    <strong><?= house_h($roomName) ?></strong>
-                                    <span class="score"><?= $score ?>/100 · <?= house_h($label) ?></span>
-                                </div>
-                                <div class="score-bar <?= house_h($tone) ?>" aria-hidden="true"><span style="width:<?= max(0, min(100, $score)) ?>%"></span></div>
-                            <?php else: ?>
-                                <div class="room-head">
-                                    <strong><?= house_h($roomName) ?></strong>
-                                    <?php if (!empty($r['condition'])): ?>
-                                        <span class="score"><?= house_h((string) $r['condition']) ?></span>
+                            <?php if ($ytId !== null || $localVideoUrl !== null): ?>
+                                <div class="estimate-video">
+                                    <?php if (!$multiEstimates): ?>
+                                        <p class="estimate-video__title">Video <?= $videoNumber ?></p>
+                                    <?php endif; ?>
+                                    <div class="estimate-video__frame">
+                                        <?php if ($localVideoUrl !== null): ?>
+                                            <div class="tour-player" data-tour-player>
+                                                <video playsinline preload="auto"
+                                                       src="<?= house_h((string) $localVideoUrl) ?>"
+                                                       title="Uploaded house tour video <?= $videoNumber ?>"></video>
+                                                <div class="tour-player__bar">
+                                                    <button type="button" class="tour-player__btn" data-tour-play aria-label="Play">▶</button>
+                                                    <input type="range" class="tour-player__seek" data-tour-seek
+                                                           min="0" max="0" step="0.1" value="0" aria-label="Seek">
+                                                    <span class="tour-player__time" data-tour-time>0:00 / 0:00</span>
+                                                </div>
+                                            </div>
+                                        <?php elseif ($ytId !== null): ?>
+                                            <iframe
+                                                src="https://www.youtube-nocookie.com/embed/<?= house_h((string) $ytId) ?>"
+                                                title="House tour video <?= $videoNumber ?>"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                allowfullscreen
+                                                loading="lazy"
+                                                referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($localVideoUrl === null && $ytId !== null): ?>
+                                        <a class="estimate-video__link"
+                                           href="https://www.youtube.com/watch?v=<?= house_h((string) $ytId) ?>"
+                                           target="_blank" rel="noopener">Open on YouTube</a>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
-                            <p class="room-note"><?= house_h($summary) ?></p>
-                            <?php if ($images !== []): ?>
-                                <div class="room-imgs">
-                                    <?php foreach ($images as $imgRow): ?>
-                                        <?php
-                                        $url = is_array($imgRow) ? (string) ($imgRow['url'] ?? '') : '';
-                                        if ($url === '') {
-                                            continue;
-                                        }
-                                        ?>
-                                        <img src="<?= house_h($url) ?>" alt="<?= house_h($roomName) ?>" loading="lazy" onerror="this.remove()">
-                                    <?php endforeach; ?>
-                                </div>
+
+                            <?php if ($hasScores && $block['overall_score'] !== null): ?>
+                                <p class="estimate-overall">
+                                    Overall visible condition · <?= (int) $block['overall_score'] ?>/100
+                                    <?php if ($block['overall_label'] !== ''): ?>
+                                        (<?= house_h($block['overall_label']) ?>)
+                                    <?php endif; ?>
+                                </p>
+                                <div class="budget-row"><span>Required repairs</span><span><?= house_h(house_money($block['required_low'])) ?> – <?= house_h(house_money($block['required_high'])) ?></span></div>
+                                <div class="budget-row"><span>Recommended improvements</span><span><?= house_h(house_money($block['recommended_low'])) ?> – <?= house_h(house_money($block['recommended_high'])) ?></span></div>
+                                <div class="budget-row"><span>Optional modernization</span><span><?= house_h(house_money($block['optional_low'])) ?> – <?= house_h(house_money($block['optional_high'])) ?></span></div>
+                                <div class="budget-row"><span>Potential total budget</span><span><?= house_h(house_money($block['total_low'])) ?> – <?= house_h(house_money($block['total_high'])) ?></span></div>
+                            <?php else: ?>
+                                <p class="estimate-overall">Potential total · <?= house_h(house_money($block['total_low'])) ?> – <?= house_h(house_money($block['total_high'])) ?></p>
                             <?php endif; ?>
 
-                            <?php if (!empty($r['recommended_work']) && is_array($r['recommended_work'])): ?>
+                            <?php foreach ($rooms as $r): ?>
                                 <?php
-                                $groups = ['required' => [], 'recommended' => [], 'optional' => []];
-                                foreach ($r['recommended_work'] as $w) {
-                                    if (!is_array($w)) {
-                                        continue;
-                                    }
-                                    $p = (string) ($w['priority'] ?? 'recommended');
-                                    if (!isset($groups[$p])) {
-                                        $p = 'recommended';
-                                    }
-                                    $groups[$p][] = $w;
+                                if (!is_array($r)) {
+                                    continue;
                                 }
-                                $labels = [
-                                    'required' => 'Required repairs',
-                                    'recommended' => 'Recommended improvements',
-                                    'optional' => 'Optional modernization',
-                                ];
+                                $roomName = (string) ($r['room'] ?? 'Room');
+                                $summary = (string) ($r['summary'] ?? $r['note'] ?? '—');
+                                $images = is_array($r['images'] ?? null) ? $r['images'] : [];
                                 ?>
-                                <?php foreach ($labels as $key => $label): ?>
-                                    <?php if ($groups[$key] === []) {
-                                        continue;
-                                    } ?>
-                                    <div class="work-section">
-                                        <h3><?= house_h($label) ?></h3>
-                                        <?php foreach ($groups[$key] as $w): ?>
-                                            <div class="work-item">
-                                                <div><strong><?= house_h((string) ($w['title'] ?? $w['code'] ?? 'Work')) ?></strong></div>
-                                                <div class="cost"><?= house_h(house_money($w['estimate_low'] ?? 0)) ?> – <?= house_h(house_money($w['estimate_high'] ?? 0)) ?></div>
-                                                <?php if (!empty($w['reason'])): ?>
-                                                    <div class="reason"><?= house_h((string) $w['reason']) ?></div>
-                                                <?php endif; ?>
+                                <div class="room-block">
+                                    <?php if ($hasScores && isset($r['condition_score'])): ?>
+                                        <?php
+                                        $score = (int) $r['condition_score'];
+                                        $tone = house_score_tone($score);
+                                        $label = (string) ($r['condition_label'] ?? renovation_score_label($score));
+                                        ?>
+                                        <div class="room-head">
+                                            <strong><?= house_h($roomName) ?></strong>
+                                            <span class="score"><?= $score ?>/100 · <?= house_h($label) ?></span>
+                                        </div>
+                                        <div class="score-bar <?= house_h($tone) ?>" aria-hidden="true"><span style="width:<?= max(0, min(100, $score)) ?>%"></span></div>
+                                    <?php else: ?>
+                                        <div class="room-head">
+                                            <strong><?= house_h($roomName) ?></strong>
+                                            <?php if (!empty($r['condition'])): ?>
+                                                <span class="score"><?= house_h((string) $r['condition']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <p class="room-note"><?= house_h($summary) ?></p>
+                                    <?php if ($images !== []): ?>
+                                        <div class="room-imgs">
+                                            <?php foreach ($images as $imgRow): ?>
+                                                <?php
+                                                $url = is_array($imgRow) ? (string) ($imgRow['url'] ?? '') : '';
+                                                if ($url === '') {
+                                                    continue;
+                                                }
+                                                ?>
+                                                <img src="<?= house_h($url) ?>" alt="<?= house_h($roomName) ?>" loading="lazy" onerror="this.remove()">
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($r['recommended_work']) && is_array($r['recommended_work'])): ?>
+                                        <?php
+                                        $groups = ['required' => [], 'recommended' => [], 'optional' => []];
+                                        foreach ($r['recommended_work'] as $w) {
+                                            if (!is_array($w)) {
+                                                continue;
+                                            }
+                                            $p = (string) ($w['priority'] ?? 'recommended');
+                                            if (!isset($groups[$p])) {
+                                                $p = 'recommended';
+                                            }
+                                            $groups[$p][] = $w;
+                                        }
+                                        $labels = [
+                                            'required' => 'Required repairs',
+                                            'recommended' => 'Recommended improvements',
+                                            'optional' => 'Optional modernization',
+                                        ];
+                                        ?>
+                                        <?php foreach ($labels as $key => $label): ?>
+                                            <?php if ($groups[$key] === []) {
+                                                continue;
+                                            } ?>
+                                            <div class="work-section">
+                                                <h3><?= house_h($label) ?></h3>
+                                                <?php foreach ($groups[$key] as $w): ?>
+                                                    <div class="work-item">
+                                                        <div><strong><?= house_h((string) ($w['title'] ?? $w['code'] ?? 'Work')) ?></strong></div>
+                                                        <div class="cost"><?= house_h(house_money($w['estimate_low'] ?? 0)) ?> – <?= house_h(house_money($w['estimate_high'] ?? 0)) ?></div>
+                                                        <?php if (!empty($w['reason'])): ?>
+                                                            <div class="reason"><?= house_h((string) $w['reason']) ?></div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php endforeach; ?>
                                             </div>
                                         <?php endforeach; ?>
-                                    </div>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
+                                    <?php endif; ?>
 
-                            <?php if (isset($r['estimate_low']) || isset($r['estimate_high'])): ?>
-                                <p class="room-budget">
-                                    Estimated <?= house_h($roomName) ?> budget:
-                                    <?= house_h(house_money($r['estimate_low'] ?? 0)) ?> – <?= house_h(house_money($r['estimate_high'] ?? 0)) ?>
-                                </p>
-                            <?php endif; ?>
+                                    <?php if (isset($r['estimate_low']) || isset($r['estimate_high'])): ?>
+                                        <p class="room-budget">
+                                            Estimated <?= house_h($roomName) ?> budget:
+                                            <?= house_h(house_money($r['estimate_low'] ?? 0)) ?> – <?= house_h(house_money($r['estimate_high'] ?? 0)) ?>
+                                        </p>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+
+                            <p class="estimate-disclaimer"><?= house_h($block['disclaimer']) ?></p>
                         </div>
                     <?php endforeach; ?>
-
-                    <p class="estimate-disclaimer"><?= house_h($analysis['disclaimer']) ?></p>
                 <?php endif; ?>
             </div>
         </div>
@@ -1422,6 +1509,69 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
 (function () {
     const listingId = <?= (int) $id ?>;
     const referralCode = <?= json_encode($activeReferralCode ?? '', JSON_UNESCAPED_SLASHES) ?>;
+
+    function fmtTime(sec) {
+        if (!isFinite(sec) || sec < 0) sec = 0;
+        const s = Math.floor(sec % 60);
+        const m = Math.floor(sec / 60);
+        return m + ':' + String(s).padStart(2, '0');
+    }
+
+    document.querySelectorAll('[data-tour-player]').forEach(function (root) {
+        const video = root.querySelector('video');
+        const playBtn = root.querySelector('[data-tour-play]');
+        const seek = root.querySelector('[data-tour-seek]');
+        const timeEl = root.querySelector('[data-tour-time]');
+        if (!video || !playBtn || !seek || !timeEl) return;
+
+        let dragging = false;
+
+        function syncTime() {
+            const dur = isFinite(video.duration) ? video.duration : 0;
+            if (!dragging) {
+                seek.max = String(dur || 0);
+                seek.value = String(video.currentTime || 0);
+            }
+            timeEl.textContent = fmtTime(video.currentTime) + ' / ' + fmtTime(dur);
+            playBtn.textContent = video.paused ? '▶' : '❚❚';
+            playBtn.setAttribute('aria-label', video.paused ? 'Play' : 'Pause');
+        }
+
+        playBtn.addEventListener('click', function () {
+            if (video.paused) {
+                video.play().catch(function () {});
+            } else {
+                video.pause();
+            }
+        });
+
+        video.addEventListener('click', function () {
+            playBtn.click();
+        });
+
+        seek.addEventListener('pointerdown', function () { dragging = true; });
+        seek.addEventListener('pointerup', function () { dragging = false; });
+        seek.addEventListener('change', function () {
+            const t = parseFloat(seek.value);
+            if (isFinite(t)) {
+                try { video.currentTime = t; } catch (e) {}
+            }
+            dragging = false;
+            syncTime();
+        });
+        seek.addEventListener('input', function () {
+            const t = parseFloat(seek.value);
+            timeEl.textContent = fmtTime(t) + ' / ' + fmtTime(video.duration || 0);
+            if (isFinite(t)) {
+                try { video.currentTime = t; } catch (e) {}
+            }
+        });
+
+        ['loadedmetadata', 'durationchange', 'timeupdate', 'play', 'pause', 'seeked', 'ended']
+            .forEach(function (ev) { video.addEventListener(ev, syncTime); });
+        syncTime();
+    });
+
     const form = document.getElementById('video-form');
     const urlInput = document.getElementById('video-url');
     const emailInput = document.getElementById('contact-email');

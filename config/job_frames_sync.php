@@ -131,18 +131,62 @@ function yai_push_job_frames_to_public(string $jobId, string $workRoot): array
         }
     }
 
+    $sourceSaved = false;
+
+    // Upload source video in its own request so large MP4s are not bundled with frame batches.
+    if ($sourceFile !== null) {
+        $post = [
+            'key' => $key,
+            'job_id' => $jobId,
+            'source' => new CURLFile($sourceFile['path'], $sourceFile['mime'], $sourceFile['name']),
+            'source_name' => $sourceFile['name'],
+            // sync endpoint requires at least one frame
+            'frames[0]' => new CURLFile($valid[0]['path'], 'image/jpeg', $valid[0]['name']),
+            'names[0]' => $valid[0]['name'],
+        ];
+        foreach ($meta as $k => $v) {
+            $post[$k] = $v;
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return ['ok' => false, 'error' => 'curl_init failed', 'uploaded' => 0];
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $post,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        ]);
+        $raw = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $err = curl_error($ch);
+        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $lastHttp = $http;
+        if ($errno !== 0) {
+            return ['ok' => false, 'error' => 'Source upload curl error: ' . $err, 'http' => $http, 'uploaded' => 0];
+        }
+        $decoded = json_decode((string) $raw, true);
+        $lastDecoded = $decoded;
+        if ($http < 200 || $http >= 300 || !is_array($decoded) || empty($decoded['ok'])) {
+            $msg = is_array($decoded) ? (string) ($decoded['error'] ?? $raw) : (string) $raw;
+
+            return ['ok' => false, 'error' => 'Source upload failed: ' . $msg, 'http' => $http, 'uploaded' => 0, 'response' => $decoded];
+        }
+        $sourceSaved = !empty($decoded['source_saved']);
+        $totalUploaded += (int) ($decoded['uploaded'] ?? 1);
+    }
+
     foreach ($batches as $batchIndex => $batch) {
         $post = [
             'key' => $key,
             'job_id' => $jobId,
         ];
-        if ($batchIndex === 0) {
+        if ($batchIndex === 0 && $sourceFile === null) {
             foreach ($meta as $k => $v) {
                 $post[$k] = $v;
-            }
-            if ($sourceFile !== null) {
-                $post['source'] = new CURLFile($sourceFile['path'], $sourceFile['mime'], $sourceFile['name']);
-                $post['source_name'] = $sourceFile['name'];
             }
         }
         foreach ($batch as $i => $row) {
@@ -190,6 +234,7 @@ function yai_push_job_frames_to_public(string $jobId, string $workRoot): array
     return [
         'ok' => true,
         'uploaded' => $totalUploaded,
+        'source_saved' => $sourceSaved,
         'http' => $lastHttp,
         'response' => $lastDecoded,
     ];
