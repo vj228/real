@@ -315,7 +315,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             display: grid;
             grid-template-columns: minmax(0, 1fr);
             gap: 32px;
-            align-items: start;
+            align-items: stretch;
             margin-top: 8px;
             max-width: none;
         }
@@ -323,7 +323,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             .house-convert {
                 grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
                 gap: 40px;
-                align-items: start;
+                align-items: stretch;
             }
         }
         .house-convert__copy {
@@ -331,6 +331,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
+            height: 100%;
         }
         .house-convert__kicker {
             margin: 0 0 10px;
@@ -656,18 +657,30 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             transform: rotate(45deg);
         }
         .house-proof {
-            margin-top: 16px;
-            padding: 12px 14px;
-            border-radius: 14px;
+            margin-top: auto;
+            padding: 24px 26px;
+            border-radius: 16px;
             background: #ebf8f1;
             border: 1px solid #c6e9d8;
             color: #176948;
-            font-size: 0.95rem;
+            font-size: clamp(1.2rem, 2vw, 1.3rem);
             font-weight: 700;
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-start;
+        }
+        .house-proof__stats {
+            margin: 0;
         }
         .house-proof a {
             color: inherit;
-            margin-left: 8px;
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 700;
+            text-decoration: underline;
+            text-underline-offset: 2px;
         }
         .house-convert__visual { min-width: 0; position: relative; }
         .house-photo {
@@ -725,10 +738,9 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             padding: 18px 0 0;
             border-top: 1px solid rgba(215, 229, 220, 0.9);
             display: flex;
-            flex-wrap: wrap;
-            gap: 10px 20px;
-            align-items: baseline;
-            justify-content: space-between;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
         }
         .house-context__addr {
             margin: 0;
@@ -1147,11 +1159,15 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                     </ul>
 
                     <?php if ($hasEstimate && $analysis['overall_score'] !== null): ?>
-                        <p class="house-proof">
-                            Current visible condition: <?= (int) $analysis['overall_score'] ?>/100
-                            · Budget <?= house_h(house_money($analysis['total_low'])) ?> – <?= house_h(house_money($analysis['total_high'])) ?>
+                        <div class="house-proof">
+                            <p class="house-proof__stats">
+                                Current visible condition: <?= (int) $analysis['overall_score'] ?>/100
+                            </p>
+                            <p class="house-proof__stats">
+                                Renovation budget: <?= house_h(house_money($analysis['total_low'])) ?> – <?= house_h(house_money($analysis['total_high'])) ?>
+                            </p>
                             <a href="#estimate">See full estimate</a>
-                        </p>
+                        </div>
                     <?php endif; ?>
                 </div>
 
