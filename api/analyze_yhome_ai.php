@@ -16,14 +16,15 @@ const YAI_ROOT = __DIR__ . '/../yhome_ai';
  * Soft ceiling only — we send every locally verified house-interior frame
  * (downscaled). Typical tours are well under this after exterior filtering.
  */
-const YAI_MAX_IMAGES = 10;
+const YAI_MAX_IMAGES = 12;
 const YAI_SEND_MAX_WIDTH = 640;
 const YAI_SEND_JPEG_QUALITY = 72;
 const YAI_ROOMS = ['kitchen', 'living', 'bathroom', 'bedroom'];
 const YAI_OUTDOOR_REJECT = 0.35;
 const YAI_PRIORITIES = ['required', 'recommended', 'optional'];
 /** Near-duplicate Hamming distance for aHash — keep distinct slides (strict). */
-const YAI_DEDUPE_MAX_DISTANCE = 2;
+const YAI_DEDUPE_MAX_DISTANCE = 6;
+const YAI_DEDUPE_MAX_TIME_GAP = 3; // seconds — different rooms are far apart in the tour
 const YAI_SUMMARY_MAX_CHARS = 160;
 const YAI_OBS_MAX_CHARS = 80;
 const YAI_REASON_MAX_CHARS = 80;
@@ -115,24 +116,23 @@ function yai_perceptual_hash(string $path): ?string
     }
     $w = imagesx($im);
     $h = imagesy($im);
-    if ($w < 8 || $h < 8) {
+    if ($w < 16 || $h < 16) {
         return null;
     }
-    $tiny = imagecreatetruecolor(8, 8);
-    imagecopyresampled($tiny, $im, 0, 0, 0, 0, 8, 8, $w, $h);
-    $sum = 0;
-    $vals = [];
-    for ($y = 0; $y < 8; $y++) {
-        for ($x = 0; $x < 8; $x++) {
-            $g = yai_gray(imagecolorat($tiny, $x, $y));
-            $vals[] = $g;
-            $sum += $g;
-        }
-    }
-    $avg = $sum / 64.0;
+    // 16x16 difference hash — much more discriminative than 8x8 average hash
+    // on bright white interiors (which otherwise all collide).
+    $tiny = imagecreatetruecolor(16, 16);
+    imagecopyresampled($tiny, $im, 0, 0, 0, 0, 16, 16, $w, $h);
     $bits = '';
-    foreach ($vals as $g) {
-        $bits .= $g >= $avg ? '1' : '0';
+    for ($y = 0; $y < 16; $y++) {
+        $prev = null;
+        for ($x = 0; $x < 16; $x++) {
+            $g = yai_gray(imagecolorat($tiny, $x, $y));
+            if ($prev !== null) {
+                $bits .= $g >= $prev ? '1' : '0';
+            }
+            $prev = $g;
+        }
     }
 
     return $bits;
@@ -183,9 +183,17 @@ function yai_dedupe_house_frames(array $house, int $maxDistance = YAI_DEDUPE_MAX
     $removedTimes = [];
     foreach ($enriched as $row) {
         $dupOf = null;
+        $tRow = (int) ($row['time_sec'] ?? 0);
+        $gRow = (string) ($row['guess'] ?? '');
         foreach ($kept as $ki => $prev) {
             $sameFile = $row['md5'] !== '' && $prev['md5'] !== '' && $row['md5'] === $prev['md5'];
-            $near = $row['phash'] !== null && $prev['phash'] !== null
+            $tPrev = (int) ($prev['time_sec'] ?? 0);
+            $gPrev = (string) ($prev['guess'] ?? '');
+            // Only near-dupe within a short time window; never merge different room guesses
+            $near = !$sameFile
+                && abs($tRow - $tPrev) <= YAI_DEDUPE_MAX_TIME_GAP
+                && ($gRow === '' || $gPrev === '' || $gRow === $gPrev)
+                && $row['phash'] !== null && $prev['phash'] !== null
                 && yai_hash_hamming((string) $row['phash'], (string) $prev['phash']) <= $maxDistance;
             if (!$sameFile && !$near) {
                 continue;
@@ -369,7 +377,6 @@ function yai_kitchen_cue(string $path): float
                     $cookDark++;
                 }
                 $midN++;
-                // Gas grate / control knobs: tiny dark dots on lighter counter
                 if ($lum < 0.25 && $neutral) {
                     $knobLike++;
                 }
@@ -390,11 +397,6 @@ function yai_kitchen_cue(string $path): float
     return max(0.0, min(1.0, $score));
 }
 
-/**
- * Local color/structure cues for bathroom / bedroom / living (rough 0..1).
- *
- * @return array{bathroom:float,bedroom:float,living:float,interior:float}
- */
 function yai_room_cues(string $path): array
 {
     $loaded = yai_load_small($path, 96);
@@ -408,9 +410,7 @@ function yai_room_cues(string $path): array
     $warmSoft = 0;
     $neutralWall = 0;
     $n = 0;
-    $midBand = 0;
-    $midDark = 0;
-    $tileWhiteLow = 0;
+    $tileLightLow = 0;
     $lowN = 0;
     $glassEdge = 0;
     $glassN = 0;
@@ -419,6 +419,16 @@ function yai_room_cues(string $path): array
     $furnN = 0;
     $floorWood = 0;
     $floorN = 0;
+    $tubWhite = 0;
+    $tubN = 0;
+    // Bedroom: pillow row (bright blobs) + darker headboard band above bed
+    $pillowBright = 0;
+    $pillowN = 0;
+    $headDark = 0;
+    $headN = 0;
+    $duvetBright = 0;
+    $duvetN = 0;
+    $lampSpot = 0;
     for ($y = 0; $y < $h; $y++) {
         for ($x = 0; $x < $w; $x++) {
             $c = imagecolorat($im, $x, $y);
@@ -436,16 +446,43 @@ function yai_room_cues(string $path): array
             if ($lum > 0.35 && $lum < 0.75 && $r >= $g && $g >= $b - 10) {
                 $warmSoft++;
             }
-            if ($y > $h * 0.45 && $y < $h * 0.75) {
-                $midBand++;
-                if ($lum < 0.28) {
-                    $midDark++;
+            // Pillows: upper-mid bright blobs across center
+            if ($y > $h * 0.28 && $y < $h * 0.48 && $x > $w * 0.22 && $x < $w * 0.78) {
+                $pillowN++;
+                if ($lum > 0.78 && abs($r - $g) < 30) {
+                    $pillowBright++;
                 }
             }
-            if ($y > $h * 0.5) {
+            // Headboard: darker band just above pillows
+            if ($y > $h * 0.18 && $y < $h * 0.32 && $x > $w * 0.28 && $x < $w * 0.72) {
+                $headN++;
+                if ($lum > 0.25 && $lum < 0.55 && abs($r - $g) < 25) {
+                    $headDark++;
+                }
+            }
+            // Duvet / mattress plane mid-frame
+            if ($y > $h * 0.42 && $y < $h * 0.68 && $x > $w * 0.22 && $x < $w * 0.78) {
+                $duvetN++;
+                if ($lum > 0.72 && abs($r - $g) < 28 && abs($g - $b) < 28) {
+                    $duvetBright++;
+                }
+            }
+            // Nightstand lamps: bright spots flanking bed
+            if ($y > $h * 0.22 && $y < $h * 0.45 && ($x < $w * 0.28 || $x > $w * 0.72) && $lum > 0.85) {
+                $lampSpot++;
+            }
+            if ($y > $h * 0.55) {
                 $lowN++;
-                if ($lum > 0.75 && abs($r - $g) < 20 && abs($g - $b) < 20) {
-                    $tileWhiteLow++;
+                // Bath floors: light gray/white tile (not warm wood)
+                if ($lum > 0.55 && $lum < 0.92 && abs($r - $g) < 18 && abs($g - $b) < 18 && !($r > $g + 8)) {
+                    $tileLightLow++;
+                }
+            }
+            // Freestanding tub oval (mid-lower white mass)
+            if ($y > $h * 0.4 && $y < $h * 0.85 && $x > $w * 0.25 && $x < $w * 0.75) {
+                $tubN++;
+                if ($lum > 0.78 && abs($r - $g) < 18 && abs($g - $b) < 18) {
+                    $tubWhite++;
                 }
             }
             // Shower glass / framed glass: high local contrast on sides
@@ -457,7 +494,6 @@ function yai_room_cues(string $path): array
             }
             if ($y > $h * 0.48 && $y < $h * 0.85) {
                 $furnN++;
-                // Soft sofa/cushion tones occupying lower half
                 if ($lum > 0.5 && $lum < 0.95 && abs($r - $g) < 28 && abs($g - $b) < 28) {
                     $furnMass++;
                 }
@@ -478,20 +514,44 @@ function yai_room_cues(string $path): array
     $whiteF = $white / $n;
     $wallF = $neutralWall / $n;
     $warmF = $warmSoft / $n;
-    $bedBand = $midBand > 0 ? $midDark / $midBand : 0.0;
-    $tileLow = $lowN > 0 ? $tileWhiteLow / $lowN : 0.0;
+    $pillowF = $pillowN > 0 ? $pillowBright / $pillowN : 0.0;
+    $headF = $headN > 0 ? $headDark / $headN : 0.0;
+    $duvetF = $duvetN > 0 ? $duvetBright / $duvetN : 0.0;
+    $tileLow = $lowN > 0 ? $tileLightLow / $lowN : 0.0;
     $glassF = $glassN > 0 ? $glassEdge / $glassN : 0.0;
     $furnF = $furnN > 0 ? $furnMass / $furnN : 0.0;
     $floorF = $floorN > 0 ? $floorWood / $floorN : 0.0;
+    $tubF = $tubN > 0 ? $tubWhite / $tubN : 0.0;
+    $lampF = min(1.0, $lampSpot / max(1, (int) ($w * 0.08)));
 
-    $bathroom = max(0.0, min(1.0, 1.8 * $tileLow + 0.9 * $glassF + 0.4 * $whiteF));
-    // Without lower-frame tile, glass/door frames alone must not look like a bath.
-    if ($tileLow < 0.12) {
-        $bathroom *= 0.35;
+    $bathroom = max(0.0, min(1.0, 1.5 * $tileLow + 0.9 * $glassF + 0.35 * $whiteF + 1.3 * $tubF));
+    if ($tileLow < 0.1 && $tubF < 0.15 && $glassF < 0.08) {
+        $bathroom *= 0.3;
     }
-    $bedroom = max(0.0, min(1.0, 1.6 * $bedBand + 0.8 * $warmF));
+    // Wood floors suppress bathroom
+    if ($floorF >= 0.2) {
+        $bathroom *= 0.45;
+    }
+
+    // Bedroom needs pillow + duvet + headboard signal — not just white walls/sofas
+    $bedroom = max(0.0, min(1.0, 1.4 * $pillowF + 1.1 * $duvetF + 0.9 * $headF + 0.45 * $lampF + 0.2 * $warmF));
+    if ($pillowF < 0.15 || $duvetF < 0.18 || $headF < 0.08) {
+        $bedroom *= 0.35;
+    }
+    // Bathrooms with white vanities can look pillow-like — glass+tile wins
+    if ($bathroom >= 0.45) {
+        $bedroom *= 0.35;
+    }
+    // Wood floor helps bedroom; strong sofa furniture mass without headboard → living
+    if ($floorF < 0.08 && $headF < 0.12) {
+        $bedroom *= 0.5;
+    }
+
     $living = max(0.0, min(1.0, 0.85 * $furnF + 0.5 * $wallF + 0.4 * $floorF));
-    $interior = max(0.0, min(1.0, 0.9 * $wallF + 0.5 * $warmF + 0.35 * $whiteF + 0.4 * $bedBand));
+    if ($bedroom >= 0.4) {
+        $living *= 0.5;
+    }
+    $interior = max(0.0, min(1.0, 0.9 * $wallF + 0.5 * $warmF + 0.35 * $whiteF + 0.3 * $duvetF));
 
     return [
         'bathroom' => $bathroom,
@@ -501,18 +561,6 @@ function yai_room_cues(string $path): array
     ];
 }
 
-/**
- * Local house-related verdict for one frame.
- *
- * @return array{
- *   house:bool,
- *   guess:string,
- *   outdoor:float,
- *   kitchen:float,
- *   sharp:float,
- *   reason:string
- * }
- */
 function yai_classify_house_frame(string $path, int $index, int $total): array
 {
     $sharp = yai_sharpness($path);
@@ -580,20 +628,30 @@ function yai_classify_house_frame(string $path, int $index, int $total): array
         'bedroom' => $cues['bedroom'],
         'living' => $cues['living'],
     ];
-    // Strong cooktop/hood → kitchen wins over living/bedroom furniture cues.
+    // Strong cooktop/hood/island → kitchen wins over living/bedroom furniture cues.
     if ($kitchen >= 0.28) {
         $scores['kitchen'] = max($scores['kitchen'], min(1.0, $kitchen + 0.35));
         $scores['living'] *= 0.4;
         $scores['bedroom'] *= 0.4;
+        $scores['bathroom'] *= 0.4;
     } elseif ($scores['kitchen'] < $scores['living'] + 0.1) {
         $scores['kitchen'] *= 0.4;
     }
-    // Bathroom tile/glass should beat kitchen cabinets when cooktop is absent.
+    // Bathroom tile/glass/tub should beat kitchen cabinets when cooktop is absent.
     if ($cues['bathroom'] >= 0.5 && $kitchen < 0.28) {
         $scores['bathroom'] = max($scores['bathroom'], min(1.0, $cues['bathroom'] + 0.35));
         $scores['kitchen'] *= 0.35;
         $scores['living'] *= 0.45;
         $scores['bedroom'] *= 0.45;
+    }
+    // Strong bedding mass → bedroom over living sofa cues (but not over kitchen appliances)
+    if ($cues['bedroom'] >= 0.42 && $kitchen < 0.28 && $cues['bathroom'] < 0.45) {
+        $scores['bedroom'] = max($scores['bedroom'], min(1.0, $cues['bedroom'] + 0.3));
+        $scores['living'] *= 0.5;
+    }
+    // Kitchen appliances beat false bedroom scores on white islands
+    if ($kitchen >= 0.28) {
+        $scores['bedroom'] *= 0.35;
     }
     arsort($scores);
     $guess = (string) array_key_first($scores);
@@ -768,8 +826,19 @@ function yai_pick_for_analysis(array $items, int $want): array
         }
         $selected = [];
         $selectedIdx = [];
-        // Round-robin per room type first
-        $types = array_keys($byGuess);
+        // Round-robin: prioritize core rooms so bedroom/bath aren't crowded out by living
+        $preferred = ['kitchen', 'living', 'bathroom', 'bedroom'];
+        $types = [];
+        foreach ($preferred as $g) {
+            if (isset($byGuess[$g])) {
+                $types[] = $g;
+            }
+        }
+        foreach (array_keys($byGuess) as $g) {
+            if (!in_array($g, $types, true)) {
+                $types[] = $g;
+            }
+        }
         $guard = 0;
         while (count($selected) < $want && $guard < $want * 4) {
             $guard++;
@@ -1155,6 +1224,7 @@ function yai_realign_rooms_by_local_guess(array $rooms, array $frames): array
     $kitchenCue = [];
     $bathCue = [];
     $liveCue = [];
+    $bedCue = [];
     foreach ($frames as $i => $f) {
         $path = (string) ($f['path'] ?? '');
         if ($path !== '' && is_readable($path) && yai_is_floor_plan($path)) {
@@ -1170,6 +1240,7 @@ function yai_realign_rooms_by_local_guess(array $rooms, array $frames): array
             $kitchenCue[(int) $i] = yai_kitchen_cue($path);
             $bathCue[(int) $i] = $cues['bathroom'];
             $liveCue[(int) $i] = $cues['living'];
+            $bedCue[(int) $i] = $cues['bedroom'];
         }
     }
 
@@ -1186,6 +1257,7 @@ function yai_realign_rooms_by_local_guess(array $rooms, array $frames): array
     }
 
     $buckets = [];
+    $assigned = [];
     foreach ($rooms as $row) {
         if (!is_array($row)) {
             continue;
@@ -1204,22 +1276,20 @@ function yai_realign_rooms_by_local_guess(array $rooms, array $frames): array
             $kit = (float) ($kitchenCue[$i] ?? 0);
             $bath = (float) ($bathCue[$i] ?? 0);
             $live = (float) ($liveCue[$i] ?? 0);
+            $bed = (float) ($bedCue[$i] ?? 0);
             $target = $geminiRoom;
             // Strong local corrections only
             if ($kit >= 0.28) {
                 $target = 'kitchen';
-            } elseif ($bath >= 0.42 && $kit < 0.25 && $bath + 0.05 >= $live) {
+            } elseif ($bath >= 0.55 && $kit < 0.25 && $bath >= $live + 0.18 && $bath >= $bed + 0.18) {
                 $target = 'bathroom';
             } elseif ($geminiRoom === 'bathroom' && $bath < 0.32 && $live > $bath + 0.25 && $kit < 0.25) {
                 // Living/dining with white walls wrongly labeled as bath
                 $target = 'living';
-            } elseif ($local === 'living' && $geminiRoom === 'kitchen' && $kit < 0.25) {
-                $target = 'living';
-            } elseif ($local === 'bedroom' && $geminiRoom === 'kitchen' && $kit < 0.25) {
-                $target = 'bedroom';
             } elseif ($local === 'bathroom' && $geminiRoom === 'kitchen' && $kit < 0.25 && $bath >= 0.4) {
                 $target = 'bathroom';
             }
+            // Trust Gemini for open-concept kitchens and bed/living distinctions.
             if ($target === '' || !in_array($target, YAI_ROOMS, true)) {
                 continue;
             }
@@ -1227,10 +1297,33 @@ function yai_realign_rooms_by_local_guess(array $rooms, array $frames): array
                 $buckets[$target] = ['idxs' => [], 'from' => []];
             }
             $buckets[$target]['idxs'][$i] = true;
+            $assigned[$i] = true;
             if ($geminiRoom !== '') {
                 $buckets[$target]['from'][$geminiRoom] = ($buckets[$target]['from'][$geminiRoom] ?? 0) + 1;
             }
         }
+    }
+
+    // Ensure strong local kitchen/bath frames appear even if Gemini omitted the room
+    foreach ($guessOf as $i => $local) {
+        if (isset($assigned[$i]) || $local === 'diagram') {
+            continue;
+        }
+        $kit = (float) ($kitchenCue[$i] ?? 0);
+        $bath = (float) ($bathCue[$i] ?? 0);
+        $target = '';
+        if ($kit >= 0.28) {
+            $target = 'kitchen';
+        } elseif ($local === 'bathroom' && $bath >= 0.4) {
+            $target = 'bathroom';
+        }
+        if ($target === '' || !in_array($target, YAI_ROOMS, true)) {
+            continue;
+        }
+        if (!isset($buckets[$target])) {
+            $buckets[$target] = ['idxs' => [], 'from' => []];
+        }
+        $buckets[$target]['idxs'][$i] = true;
     }
 
     $out = [];
@@ -1776,15 +1869,16 @@ $codesList = implode(', ', renovation_allowed_codes());
 $prompt = 'You assess visible room condition from house-tour frames for buyer due-diligence.
 Images were pre-filtered to interiors (floor plans, maps, and exteriors removed).
 For each IMAGE #, decide the room type from visual content: kitchen, living, bathroom, or bedroom.
-- kitchen = cooktop/range/hood/cabinets+sink work zone (NOT living rooms with sofas)
-- living = sofa/lounge/family room seating areas
+- kitchen = cooktop/range/hood OR kitchen island/cabinets/ovens/sink work zone. If the FOREGROUND is a kitchen (island, cabinets, appliances), label kitchen even when a living room is visible in the background (open concept).
+- living = sofa/lounge/family/dining seating WITHOUT a kitchen island/cabinets dominating the frame
 - bathroom = vanity/toilet/shower/tub (NOT floor plans)
-- bedroom = bed or clear sleeping room
+- bedroom = a bed is clearly visible (headboard, pillows, mattress). ALWAYS create a bedroom entry when any image shows a bed.
 Create one rooms[] entry per room type that appears. Merge all images of that room into ONE assessment.
-Assign each IMAGE # only to the room that matches what is actually shown.
+Assign each IMAGE # only to the room that matches what is actually shown. Every IMAGE # must appear in exactly one room.
 Do NOT invent dollar amounts. Do NOT assess hidden plumbing, electrical, structural, HVAC, roof, mold, foundation, or anything not visible.
 
-IGNORE ALL FURNITURE in every room (sofas, chairs, tables, beds, rugs, decor, staging items, freestanding pieces). Never recommend work for furniture and never let furniture condition affect scores or recommended_work.
+For SCORING and recommended_work only: ignore movable furniture/staging (sofas, chairs, tables, rugs, decor). Beds still define bedroom classification, but do not score mattress/bedding condition.
+Never recommend work for furniture and never let furniture condition affect scores or recommended_work.
 
 Room focus (prioritize these when scoring and recommending work; other visible fixed finishes may still be noted if clearly relevant):
 - living + bedroom: focus on floors, walls (paint/drywall), and windows.

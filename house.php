@@ -1121,19 +1121,22 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                     <p class="house-convert__kicker">For this home</p>
                     <h1 class="house-convert__title">
                         <?= $hasEstimate
-                            ? 'Want a sharper renovation read? Share a better tour video.'
-                            : 'Know renovation cost before you offer.' ?>
+                            ? 'Touring this home?'
+                            : 'Help buyers understand the renovation cost of this home' ?>
                     </h1>
                     <p class="house-convert__sub">
-                        Upload a house-tour video or paste a YouTube link for <strong><?= house_h($address) ?></strong>.
-                        We’ll score visible rooms and estimate likely work — so you don’t guess after you’re emotionally invested.
+                        <?php if ($hasEstimate): ?>
+                            Get a more personalized renovation estimate. Record your own walkthrough to capture areas the listing video may not show.
+                        <?php else: ?>
+                            Upload the listing video or paste a YouTube walkthrough to create a free preliminary AI renovation estimate.
+                        <?php endif; ?>
                     </p>
 
                     <div class="upload-cta" id="upload">
                         <button type="button" class="button button-primary" id="open-upload-modal">
-                            <?= $hasEstimate ? 'Upload a better tour video' : 'Upload house-tour video' ?>
+                            <?= $hasEstimate ? 'Upload My Walkthrough' : 'Upload Listing Video' ?>
                         </button>
-                        <p class="upload-cta__hint">Free · No signup · File or YouTube</p>
+                        <p class="upload-cta__hint"><?= $hasEstimate ? 'Free · No signup' : 'Free · No signup · File or YouTube' ?></p>
                     </div>
                     <div class="house-status" id="video-status" role="status" aria-live="polite"></div>
 
@@ -1418,7 +1421,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
 
 <div class="house-sticky-cta" aria-hidden="false">
     <button type="button" class="button button-primary" data-open-upload>
-        <?= $hasEstimate ? 'Upload a better tour video' : 'Upload house-tour video' ?>
+        <?= $hasEstimate ? 'Upload My Walkthrough' : 'Upload Listing Video' ?>
     </button>
 </div>
 
