@@ -112,7 +112,7 @@ if (!function_exists('yai_dedupe_sharpness')) {
  * @param list<string> $paths Absolute JPEG paths
  * @return array{kept:list<string>,removed:list<string>}
  */
-function yai_dedupe_jpeg_paths(array $paths, int $maxDistance = 6): array
+function yai_dedupe_jpeg_paths(array $paths, int $maxDistance = 2): array
 {
     $kept = []; // list of ['path'=>,'phash'=>,'md5'=>,'sharp'=>]
     $removed = [];
@@ -197,7 +197,7 @@ function yai_dedupe_selected_dir(string $selectedDir, bool $delete = true): arra
  * @param list<mixed> $images
  * @return list<array{url:string}>
  */
-function yai_dedupe_room_images(array $images, string $docRoot, int $maxDistance = 6): array
+function yai_dedupe_room_images(array $images, string $docRoot, int $maxDistance = 2): array
 {
     $paths = [];
     $byPath = [];

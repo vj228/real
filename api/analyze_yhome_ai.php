@@ -16,12 +16,17 @@ const YAI_ROOT = __DIR__ . '/../yhome_ai';
  * Soft ceiling only — we send every locally verified house-interior frame
  * (downscaled). Typical tours are well under this after exterior filtering.
  */
-const YAI_MAX_IMAGES = 20;
+const YAI_MAX_IMAGES = 10;
 const YAI_SEND_MAX_WIDTH = 640;
 const YAI_SEND_JPEG_QUALITY = 72;
 const YAI_ROOMS = ['kitchen', 'living', 'bathroom', 'bedroom'];
-const YAI_OUTDOOR_REJECT = 0.42;
+const YAI_OUTDOOR_REJECT = 0.35;
 const YAI_PRIORITIES = ['required', 'recommended', 'optional'];
+/** Near-duplicate Hamming distance for aHash — keep distinct slides (strict). */
+const YAI_DEDUPE_MAX_DISTANCE = 2;
+const YAI_SUMMARY_MAX_CHARS = 160;
+const YAI_OBS_MAX_CHARS = 80;
+const YAI_REASON_MAX_CHARS = 80;
 
 require_once dirname(__DIR__) . '/config/renovation_pricing.php';
 require_once dirname(__DIR__) . '/config/job_frames_sync.php';
@@ -155,7 +160,7 @@ function yai_hash_hamming(string $a, string $b): int
  * @param list<array<string,mixed>> $house
  * @return array{kept:list<array<string,mixed>>,removed:int,log:list<string>}
  */
-function yai_dedupe_house_frames(array $house, int $maxDistance = 6): array
+function yai_dedupe_house_frames(array $house, int $maxDistance = YAI_DEDUPE_MAX_DISTANCE): array
 {
     $log = [];
     if (count($house) <= 1) {
@@ -269,7 +274,7 @@ function yai_outdoor_likelihood(string $path): float
     $skyFrac = $topN > 0 ? $sky / $topN : 0.0;
     $greenFrac = $green / $n;
     $brightFrac = $bright / $n;
-    $score = 0.55 * $skyFrac + 0.35 * $greenFrac + 0.15 * max(0.0, $brightFrac - 0.45);
+    $score = 0.55 * $skyFrac + 0.45 * $greenFrac + 0.28 * max(0.0, $brightFrac - 0.4);
 
     return max(0.0, min(1.0, $score));
 }
@@ -435,8 +440,19 @@ function yai_classify_house_frame(string $path, int $index, int $total): array
             'reason' => 'likely exterior (sky/grass)',
         ];
     }
+    // Curb / aerial / yard shots with weak kitchen/bath cues
+    if ($outdoor >= 0.22 && $kitchen < 0.28 && $cues['bathroom'] < 0.28 && $cues['interior'] < 0.35) {
+        return [
+            'house' => false,
+            'guess' => 'exterior',
+            'outdoor' => $outdoor,
+            'kitchen' => $kitchen,
+            'sharp' => $sharp,
+            'reason' => 'exterior / yard / aerial',
+        ];
+    }
     // Early/late curb-appeal shots that still look semi-indoor
-    if ($edge && $outdoor >= 0.28 && $kitchen < 0.35 && $cues['interior'] < 0.28) {
+    if ($edge && $outdoor >= 0.22 && $kitchen < 0.35 && $cues['interior'] < 0.28) {
         return [
             'house' => false,
             'guess' => 'exterior',
@@ -560,6 +576,23 @@ function yai_pick_for_analysis(array $items, int $want): array
     $log[] = 'Local pre-filter scanned ' . $n . ' frames for house-related interiors.';
     $log[] = 'Kept ' . count($house) . ' house frames; rejected ' . count($rejected)
         . ' (exterior / blank / weak interior).';
+    // Extra outdoor sweep (catch curb/yard that slipped past classify)
+    $outdoorSweep = [];
+    $house2 = [];
+    foreach ($house as $row) {
+        if ((float) ($row['outdoor'] ?? 0) >= 0.15) {
+            $outdoorSweep[] = $row;
+            continue;
+        }
+        $house2[] = $row;
+    }
+    if ($outdoorSweep !== []) {
+        $house = $house2;
+        $rejTimes = array_map(static fn ($r) => $r['time_sec'] . 's', $outdoorSweep);
+        $log[] = 'Outdoor sweep removed ' . count($outdoorSweep)
+            . ' more frame(s): ' . implode(', ', $rejTimes) . '.';
+        $rejected = array_merge($rejected, $outdoorSweep);
+    }
     if ($guessCounts !== []) {
         ksort($guessCounts);
         $bits = [];
@@ -797,8 +830,32 @@ function yai_parse_rooms_json(string $text): ?array
         return ['rooms' => $rooms];
     }
 
-    // Light repair then decode
-    $repair = preg_replace('/"images"\s*:\s*$/', '"images":[]', $text) ?? $text;
+    // Light repair then decode (incl. truncated mid-string summaries)
+    $repair = $text;
+    // If unfinished string at end, close it
+    $inStr = false;
+    $esc = false;
+    $lenR = strlen($repair);
+    for ($i = 0; $i < $lenR; $i++) {
+        $ch = $repair[$i];
+        if ($inStr) {
+            if ($esc) {
+                $esc = false;
+            } elseif ($ch === '\\') {
+                $esc = true;
+            } elseif ($ch === '"') {
+                $inStr = false;
+            }
+            continue;
+        }
+        if ($ch === '"') {
+            $inStr = true;
+        }
+    }
+    if ($inStr) {
+        $repair .= '"';
+    }
+    $repair = preg_replace('/"images"\s*:\s*$/', '"images":[]', $repair) ?? $repair;
     $repair = preg_replace('/,\s*$/', '', rtrim($repair)) ?? $repair;
     $opens = substr_count($repair, '{') - substr_count($repair, '}');
     $opensArr = substr_count($repair, '[') - substr_count($repair, ']');
@@ -817,6 +874,60 @@ function yai_parse_rooms_json(string $text): ?array
         if ($parsed !== null) {
             return $parsed;
         }
+    }
+
+    // Last resort: extract room + score (+ short summary) from truncated / looping output
+    $loose = [];
+    if (preg_match_all(
+        '/"room"\s*:\s*"([^"]+)"\s*,\s*"condition_score"\s*:\s*(\d+)/',
+        $text,
+        $matches,
+        PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+    )) {
+        foreach ($matches as $m) {
+            $roomName = yai_normalize_room($m[1][0]);
+            if ($roomName === '') {
+                continue;
+            }
+            $score = (int) $m[2][0];
+            $pos = (int) $m[0][1];
+            $chunk = substr($text, $pos, 2500);
+            $summary = '';
+            if (preg_match('/"summary"\s*:\s*"(.*)$/s', $chunk, $sm)) {
+                $summary = $sm[1];
+                // Cut at escape/loop — take first sentence-ish
+                $summary = preg_replace('/\\\\"/', '', $summary) ?? $summary;
+                if (preg_match('/^([^"]{10,180})/', $summary, $sm2)) {
+                    $summary = $sm2[1];
+                } else {
+                    $summary = substr($summary, 0, 160);
+                }
+            }
+            $imgs = [];
+            if (preg_match('/"images"\s*:\s*\[([^\]]*)\]/', $chunk, $im)) {
+                foreach (preg_split('/\s*,\s*/', trim($im[1])) as $n) {
+                    if ($n !== '' && is_numeric($n)) {
+                        $imgs[] = (int) $n;
+                    }
+                }
+            }
+            $conf = 0.75;
+            if (preg_match('/"confidence"\s*:\s*([0-9.]+)/', $chunk, $cm)) {
+                $conf = (float) $cm[1];
+            }
+            $loose[$roomName] = [
+                'room' => $roomName,
+                'condition_score' => $score,
+                'confidence' => $conf,
+                'summary' => $summary,
+                'observations' => [],
+                'recommended_work' => [],
+                'images' => $imgs,
+            ];
+        }
+    }
+    if ($loose !== []) {
+        return ['rooms' => array_values($loose)];
     }
 
     return null;
@@ -869,6 +980,38 @@ function yai_clamp_confidence(mixed $c): float
     return max(0.0, min(1.0, (float) $c));
 }
 
+/** Collapse runaway / repetitive Gemini prose into a short readable line. */
+function yai_clamp_prose(string $text, int $maxChars): string
+{
+    $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+    if ($text === '') {
+        return '';
+    }
+    // Detect looping filler ("solid strong spot solid strong spot…")
+    $words = preg_split('/\s+/u', $text) ?: [];
+    if (count($words) > 24) {
+        $uniq = [];
+        foreach ($words as $w) {
+            $k = strtolower($w);
+            $uniq[$k] = ($uniq[$k] ?? 0) + 1;
+        }
+        $top = max($uniq);
+        if ($top >= 4 && $top / max(1, count($words)) >= 0.12) {
+            $text = implode(' ', array_slice($words, 0, 20));
+        }
+    }
+    if (mb_strlen($text) > $maxChars) {
+        $cut = mb_substr($text, 0, $maxChars);
+        $sp = mb_strrpos($cut, ' ');
+        if ($sp !== false && $sp > (int) ($maxChars * 0.5)) {
+            $cut = mb_substr($cut, 0, $sp);
+        }
+        $text = rtrim($cut, " \t.,;:") . '…';
+    }
+
+    return $text;
+}
+
 /**
  * Price Gemini work recommendations in PHP (never trust AI dollars).
  *
@@ -910,13 +1053,16 @@ function yai_estimate(array $rooms, array $frames): array
             };
         }
         $confidence = yai_clamp_confidence($row['confidence'] ?? 0.75);
-        $summary = trim((string) ($row['summary'] ?? $row['note'] ?? ''));
+        $summary = yai_clamp_prose((string) ($row['summary'] ?? $row['note'] ?? ''), YAI_SUMMARY_MAX_CHARS);
         $observations = [];
         if (isset($row['observations']) && is_array($row['observations'])) {
             foreach ($row['observations'] as $obs) {
-                $obs = trim((string) $obs);
+                $obs = yai_clamp_prose((string) $obs, YAI_OBS_MAX_CHARS);
                 if ($obs !== '') {
                     $observations[] = $obs;
+                }
+                if (count($observations) >= 3) {
+                    break;
                 }
             }
         }
@@ -952,7 +1098,7 @@ function yai_estimate(array $rooms, array $frames): array
             if ($title === '') {
                 $title = $price['title'];
             }
-            $reason = trim((string) ($w['reason'] ?? ''));
+            $reason = yai_clamp_prose((string) ($w['reason'] ?? ''), YAI_REASON_MAX_CHARS);
             // Dedupe by code within room; keep stricter priority
             if (isset($workItems[$code])) {
                 $rank = ['required' => 3, 'recommended' => 2, 'optional' => 1];
@@ -1387,11 +1533,12 @@ recommended_work[].priority must be required|recommended|optional:
 - optional = primarily cosmetic
 Use ONLY these work codes: ' . $codesList . '
 Prefer work codes that match each room focus (all rooms → floor/paint/drywall/window; kitchen also → cabinet/sink/faucet/hood/cooking-area; bathroom also → toilet/shower). Other fixed-finish codes are allowed when clearly needed.
-Keep summary ≤25 words, ≤3 short observations, reason ≤12 words. Deduplicate work items.
+Keep summary ≤25 words (one plain sentence, no filler or repeated adjectives). ≤3 short observations (≤12 words each). reason ≤12 words. Deduplicate work items.
+Never pad summaries with repeated phrases.
 
 Return ONLY JSON:
 {"rooms":[{"room":"kitchen","condition_score":78,"confidence":0.91,"summary":"…","observations":["…"],"recommended_work":[{"code":"cabinet_refinish","title":"Refinish cabinets","priority":"optional","reason":"…"}],"images":[0,3]}]}
-Map images[] to IMAGE # indexes.';
+Map images[] to IMAGE # indexes. Emit one room entry for each room type clearly visible among the images.';
 
 $parts[] = ['text' => $prompt];
 $log[] = 'Built Gemini request with ' . count($frames) . ' house frames (from '
@@ -1405,11 +1552,11 @@ $url = 'https://generativelanguage.googleapis.com/v1beta/models/'
 $payload = json_encode([
     'contents' => [['parts' => $parts]],
     'generationConfig' => [
-        'temperature' => 0.15,
-        'maxOutputTokens' => 16384,
-        // Keep thinking low so JSON output isn't truncated by thought tokens.
+        'temperature' => 0.1,
+        'maxOutputTokens' => 4096,
+        // Minimize thinking so JSON isn't truncated by thought/filler tokens.
         'thinkingConfig' => [
-            'thinkingLevel' => 'LOW',
+            'thinkingBudget' => 0,
         ],
         'responseMimeType' => 'application/json',
         'responseSchema' => [
@@ -1423,10 +1570,16 @@ $payload = json_encode([
                             'room' => ['type' => 'STRING'],
                             'condition_score' => ['type' => 'INTEGER'],
                             'confidence' => ['type' => 'NUMBER'],
-                            'summary' => ['type' => 'STRING'],
+                            'summary' => [
+                                'type' => 'STRING',
+                                'description' => 'One sentence, max 25 words. No repeated filler phrases.',
+                            ],
                             'observations' => [
                                 'type' => 'ARRAY',
-                                'items' => ['type' => 'STRING'],
+                                'items' => [
+                                    'type' => 'STRING',
+                                    'description' => 'Max 12 words.',
+                                ],
                             ],
                             'recommended_work' => [
                                 'type' => 'ARRAY',
