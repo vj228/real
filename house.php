@@ -378,6 +378,22 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             font-size: 0.9rem;
             font-weight: 600;
         }
+        .house-text-line {
+            display: inline-block;
+            margin: 18px 0 4px;
+            padding: 14px 20px;
+            border: 2px solid var(--accent, #2e9d78);
+            border-radius: 14px;
+            background: #ebf8f1;
+            color: var(--accent-dark, #176948);
+            font-size: clamp(1.15rem, 2.4vw, 1.4rem);
+            font-weight: 800;
+            line-height: 1.3;
+            letter-spacing: -0.01em;
+            text-decoration: none;
+        }
+        .house-text-line strong { white-space: nowrap; }
+        .house-text-line:hover { background: #dcf2e6; }
         .house-status {
             display: none;
             margin-top: 12px;
@@ -1152,6 +1168,10 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                     </div>
                     <div class="house-status" id="video-status" role="status" aria-live="polite"></div>
 
+                    <a class="house-text-line" href="sms:+16263238836">
+                        Text <strong>+1 (626) 323-8836</strong> to ask about this home
+                    </a>
+
                     <ul class="house-outcomes">
                         <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Visible condition score for kitchen, living, bath & bedroom</span></li>
                         <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Required vs optional work with budget ranges</span></li>
@@ -1202,8 +1222,15 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                         $claimEmail = trim((string) ($listing['claim_agent_email'] ?? ''));
                         $brokerName = trim((string) ($listing['listing_broker_name'] ?? ''));
                         $agentClaimed = (int) ($listing['listing_agent_claimed'] ?? 0) === 1;
+                        $httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+                        $httpHost = preg_replace('/:\d+$/', '', $httpHost) ?: $httpHost;
+                        $isLocalHost = in_array($httpHost, ['localhost', '127.0.0.1', '::1'], true);
                         // Public contact email after approval = claim login email (independent of scraped listing email).
-                        $publicEmail = $agentClaimed && $claimEmail !== '' ? $claimEmail : '';
+                        // On localhost always unlock scraped phone/email for local QA.
+                        $publicEmail = $isLocalHost
+                            ? ($listingEmail !== '' ? $listingEmail : $claimEmail)
+                            : ($agentClaimed && $claimEmail !== '' ? $claimEmail : '');
+                        $showAgentContact = $isLocalHost || $agentClaimed;
                         $hasScrapedContact = $agentPhone !== '' || $listingEmail !== '';
                         $hasAgentBlock = $agentName !== '' || $brokerName !== '' || $hasScrapedContact || ($agentClaimed && $claimEmail !== '');
                         if ($hasAgentBlock):
@@ -1216,7 +1243,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                 <?php if ($brokerName !== ''): ?>
                                     <p class="house-agent__broker"><?= house_h($brokerName) ?></p>
                                 <?php endif; ?>
-                                <?php if ($agentClaimed && ($agentPhone !== '' || $publicEmail !== '')): ?>
+                                <?php if ($showAgentContact && ($agentPhone !== '' || $publicEmail !== '')): ?>
                                     <div class="house-agent__contact">
                                         <?php if ($agentPhone !== ''): ?>
                                             <a href="tel:<?= house_h(preg_replace('/[^\d+]/', '', $agentPhone) ?: $agentPhone) ?>"><?= house_h($agentPhone) ?></a>
@@ -1225,7 +1252,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                             <a href="mailto:<?= house_h($publicEmail) ?>"><?= house_h($publicEmail) ?></a>
                                         <?php endif; ?>
                                     </div>
-                                <?php elseif ($hasScrapedContact): ?>
+                                <?php elseif (!$isLocalHost && $hasScrapedContact): ?>
                                     <div class="house-agent__locked">
                                         <?php if ($agentPhone !== ''): ?>
                                             <div class="house-agent__blur-row">
@@ -1240,7 +1267,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                         <p class="house-agent__hint">Contact unlocks after the listing agent claims this page.</p>
                                         <a class="house-agent__claim" href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim this listing</a>
                                     </div>
-                                <?php elseif (!$agentClaimed): ?>
+                                <?php elseif (!$isLocalHost && !$agentClaimed): ?>
                                     <div class="house-agent__locked">
                                         <p class="house-agent__hint">Contact unlocks after the listing agent claims this page.</p>
                                         <a class="house-agent__claim" href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim this listing</a>
