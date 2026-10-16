@@ -394,6 +394,13 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
         }
         .house-text-line strong { white-space: nowrap; }
         .house-text-line:hover { background: #dcf2e6; }
+        .house-text-consent {
+            margin: 6px 0 0;
+            max-width: 32rem;
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.45;
+        }
         .house-status {
             display: none;
             margin-top: 12px;
@@ -1171,6 +1178,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                     <a class="house-text-line" href="sms:+16263238836">
                         Text <strong>+1 (626) 323-8836</strong> to ask about this home
                     </a>
+                    <p class="house-text-consent">By texting this number, you agree to receive SMS replies about this listing from yhome.ai. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out.</p>
 
                     <ul class="house-outcomes">
                         <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Visible condition score for kitchen, living, bath & bedroom</span></li>
