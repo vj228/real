@@ -29,6 +29,9 @@ $effectiveDate = 'May 18, 2026';
 
                 <p>These Terms of Service (“Terms”) govern your access to and use of the yHome website and related services (collectively, the “Service”), operated at <a href="https://yhome.ai">https://yhome.ai</a> (“yHome,” “we,” “us,” or “our”). By using the Service, you agree to these Terms. If you do not agree, do not use the Service.</p>
 
+                <h2>SMS Terms</h2>
+                <p>yhome.ai SMS listing assistant: when you text our number, you agree to receive SMS replies about real estate listings. Message frequency varies. Message and data rates may apply. Reply STOP to opt out at any time. Reply HELP for help.</p>
+
                 <h2>1. What yHome provides</h2>
                 <p>yHome offers educational and informational tools to help prospective homebuyers understand estimated monthly housing costs, financial pressure, and general decision signals based on information you provide (such as property address, income, debts, and offer assumptions).</p>
                 <p>The Service is provided for general informational purposes only. yHome is <strong>not</strong> a lender, mortgage broker, real estate broker, financial advisor, tax advisor, or legal advisor, and does not provide lending decisions, underwriting, appraisals, or personalized professional advice.</p>

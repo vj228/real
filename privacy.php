@@ -29,6 +29,9 @@ $effectiveDate = 'May 18, 2026';
 
                 <p>This Privacy Policy explains how yHome (“we,” “us,” or “our”) collects, uses, and shares information when you visit <a href="https://yhome.ai">https://yhome.ai</a> or use our homebuying cost and risk tools (the “Service”).</p>
 
+                <h2>SMS Communications</h2>
+                <p>If you opt in to receive SMS messages from yhome.ai, we collect your phone number and message content to operate the service. We do not sell or share your SMS opt-in data or personal information with third parties for marketing purposes. Message frequency varies. Message and data rates may apply. You can opt out at any time by replying STOP.</p>
+
                 <h2>1. Information we collect</h2>
 
                 <h3>Information you provide</h3>
