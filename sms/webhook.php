@@ -73,11 +73,8 @@ $to    = $_POST['To']   ?? '';   // your Twilio number
 $body  = trim($_POST['Body'] ?? '');
 $upper = strtoupper($body);
 
-// Find the listing mapped to this Twilio number
-$stmt = $db->prepare("SELECT * FROM sms_listings WHERE twilio_number = ? LIMIT 1");
-$stmt->execute([$to]);
-$listing = $stmt->fetch(PDO::FETCH_ASSOC);
-$listingId = $listing ? (int)$listing['id'] : 0;
+// Texting agents who never opted in can get the A2P campaign suspended — keep off unless agents consent.
+const AGENT_ALERTS = false;
 
 // Get or create subscriber row (consent tracking)
 $stmt = $db->prepare("SELECT * FROM sms_subscribers WHERE buyer_phone = ? AND twilio_number = ? LIMIT 1");
@@ -141,9 +138,67 @@ function twimlOk() {
     exit;
 }
 
+function loadListing($db, $id) {
+    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE id = ? AND is_active = 1 LIMIT 1");
+    $stmt->execute([$id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+// Match a yhome.ai house link or a street address ("323 Santa Rosa", "1501 S Santa Anita Ave") to an active listing.
+function findListingInText($db, $text) {
+    if (preg_match('~house\.php\?id=(\d+)~i', $text, $m)) {
+        return loadListing($db, (int) $m[1]);
+    }
+    if (!preg_match('/\b(\d{1,6})\s+[A-Za-z]/', $text, $m)) {
+        return null;
+    }
+    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE is_active = 1 AND address LIKE ?");
+    $stmt->execute([$m[1] . ' %']);
+    $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (!$candidates) {
+        return null;
+    }
+    $skip = ['st', 'street', 'ave', 'avenue', 'rd', 'road', 'dr', 'drive', 'blvd', 'ln', 'lane', 'way', 'ct', 'court',
+        'pl', 'the', 'and', 'ca', 'house', 'home', 'about', 'for'];
+    $words = array_diff(preg_split('/[^a-z]+/', strtolower($text), -1, PREG_SPLIT_NO_EMPTY), $skip);
+    $best = null;
+    $bestScore = 0;
+    $tie = false;
+    foreach ($candidates as $c) {
+        $street = preg_split('/[^a-z]+/', strtolower(explode(',', $c['address'])[0]), -1, PREG_SPLIT_NO_EMPTY);
+        $score = count(array_intersect(array_unique($words), array_diff($street, $skip)));
+        if ($score > $bestScore) {
+            [$best, $bestScore, $tie] = [$c, $score, false];
+        } elseif ($score === $bestScore && $score > 0) {
+            $tie = true;
+        }
+    }
+    return ($best && !$tie) ? $best : null;
+}
+
+function listingSummary($l) {
+    $price = $l['list_price'] !== null ? '$' . number_format((float) $l['list_price']) : 'price n/a';
+    $beds = $l['beds'] !== null ? rtrim(rtrim((string) $l['beds'], '0'), '.') . ' bed' : '';
+    $baths = $l['baths'] !== null ? rtrim(rtrim((string) $l['baths'], '0'), '.') . ' bath' : '';
+    return trim("{$l['address']} — " . implode(', ', array_filter([$beds, $baths, $price])));
+}
+
+$askAddress = "yhome.ai: Which home are you asking about? Reply with the street address (for example: 323 Santa Rosa Rd).";
+
+// Which house: one named in this message, else the last one this buyer asked about.
+$listing = findListingInText($db, $body);
+$justPicked = $listing !== null;
+if (!$listing) {
+    $stmt = $db->prepare("SELECT listing_id FROM sms_leads WHERE buyer_phone = ? AND listing_id > 0 ORDER BY id DESC LIMIT 1");
+    $stmt->execute([$from]);
+    $lastId = (int) $stmt->fetchColumn();
+    $listing = $lastId ? loadListing($db, $lastId) : null;
+}
+$listingId = $listing ? (int) $listing['id'] : 0;
+
 // Log every inbound message
 if ($body !== '') {
-    logLead($db, $listingId, $from, 'in', $body);
+    logLead($db, $justPicked ? $listingId : 0, $from, 'in', $body);
 }
 
 // --- STOP: opt out ---
@@ -151,19 +206,19 @@ if (in_array($upper, ['STOP', 'END', 'CANCEL', 'UNSUBSCRIBE', 'QUIT'], true)) {
     setStatus($db, $from, $to, 'opted_out');
     $msg = "yhome.ai: You've been unsubscribed. You won't receive more messages. Reply START to rejoin.";
     sendSms($from, $to, $msg);
-    logLead($db, $listingId, $from, 'out', $msg);
+    logLead($db, 0, $from, 'out', $msg);
     twimlOk();
 }
 
-// --- YES / START: confirm opt-in ---
+// --- YES / START: confirm opt-in, then ask which home (or greet if we already know) ---
 if (in_array($upper, ['YES', 'Y', 'START', 'UNSTOP'], true)) {
     if ($status !== 'confirmed') {
         setStatus($db, $from, $to, 'confirmed');
         $greeting = $listing
-            ? "yhome.ai: You're in! This is the AI assistant for {$listing['address']} — {$listing['beds']} bed, {$listing['baths']} bath, \${$listing['price']}. Ask me anything about the home!"
-            : "yhome.ai: You're in! Ask me anything about the home.";
+            ? "yhome.ai: You're in! I'm the AI assistant for " . listingSummary($listing) . ". Ask me anything about this home!"
+            : "yhome.ai: You're in! " . substr($askAddress, strlen('yhome.ai: '));
         sendSms($from, $to, $greeting);
-        logLead($db, $listingId, $from, 'out', $greeting);
+        logLead($db, 0, $from, 'out', $greeting);
         twimlOk();
     }
     // already confirmed -> fall through and treat as a question
@@ -174,49 +229,71 @@ if ($status === 'opted_out') {
     twimlOk();
 }
 
-// --- Not yet confirmed: ask for YES (double opt-in, required by carriers) ---
+// --- Not yet confirmed: ask for YES (double opt-in) ---
 if ($status !== 'confirmed') {
-    $ask = "yhome.ai: Thanks for texting! Reply YES to confirm you want SMS updates about this listing, or reply STOP to opt out.";
+    $ask = "yhome.ai: Thanks for texting! Reply YES to confirm you want SMS replies about homes on yhome.ai, or reply STOP to opt out.";
     // only send the ask once per conversation burst (avoid loops): skip if last outbound was the ask
     $stmt = $db->prepare("SELECT message FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' ORDER BY id DESC LIMIT 1");
     $stmt->execute([$from]);
     $lastOut = $stmt->fetchColumn();
     if ($lastOut !== $ask) {
         sendSms($from, $to, $ask);
-        logLead($db, $listingId, $from, 'out', $ask);
+        logLead($db, 0, $from, 'out', $ask);
     }
     twimlOk();
 }
 
-// --- Confirmed: answer the question with Gemini ---
+// --- Confirmed but no house yet: ask for the address ---
 if (!$listing) {
-    $msg = "yhome.ai: Sorry, this number isn't linked to a listing yet.";
+    $msg = preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
+        ? "yhome.ai: I couldn't find that address on yhome.ai. Please reply with the street address as shown on the house page (for example: 323 Santa Rosa Rd)."
+        : $askAddress;
     sendSms($from, $to, $msg);
     logLead($db, 0, $from, 'out', $msg);
     twimlOk();
 }
 
-$prompt = "You are a friendly AI assistant for the home at {$listing['address']}. "
-    . "Facts: price \${$listing['price']}, {$listing['beds']} bed, {$listing['baths']} bath, {$listing['sqft']} sqft. "
-    . "Description: {$listing['description']} Listing agent: {$listing['agent_name']}. "
+// --- They just named the house: confirm it ---
+if ($justPicked) {
+    $msg = "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?";
+    sendSms($from, $to, $msg);
+    logLead($db, $listingId, $from, 'out', $msg);
+    twimlOk();
+}
+
+// --- Answer the question with Gemini ---
+$stmt = $db->prepare("SELECT total_low, total_high FROM ai_analyses WHERE listing_id = ? ORDER BY analyzed_at DESC, id DESC LIMIT 1");
+$stmt->execute([$listingId]);
+$estimate = $stmt->fetch(PDO::FETCH_ASSOC);
+$agentName = trim((string) ($listing['listing_agent_name'] ?? '')) ?: 'the listing agent';
+
+$prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by text about the home at {$listing['address']}. "
+    . "Facts: list price " . ($listing['list_price'] !== null ? '$' . number_format((float) $listing['list_price']) : 'unknown')
+    . ", {$listing['beds']} bed, {$listing['baths']} bath, {$listing['sqft']} sqft. "
+    . ($estimate
+        ? "yhome.ai AI renovation estimate from listing media: $" . number_format((int) $estimate['total_low']) . " – $" . number_format((int) $estimate['total_high']) . ". "
+        : "No yhome.ai renovation estimate yet. ")
+    . "Listing agent: $agentName. More details: https://yhome.ai/house.php?id={$listingId} . "
     . "Answer the buyer's question briefly, like a text message, under 300 characters. "
-    . "If asked about renovation cost, give a rough ballpark and say clearly it is not a quote. "
-    . "If you don't know something, say so and offer to have {$listing['agent_name']} follow up. "
+    . "If asked about renovation cost, use the estimate above if available and say clearly it is not a quote. "
+    . "If you don't know something, say so and suggest contacting $agentName or the house page. "
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
 if ($answer === '') {
-    $answer = "yhome.ai: Sorry, I couldn't pull that up right now. Want me to have {$listing['agent_name']} follow up with you?";
+    $answer = "yhome.ai: Sorry, I couldn't pull that up right now. See https://yhome.ai/house.php?id={$listingId} for details.";
 }
 sendSms($from, $to, $answer);
 logLead($db, $listingId, $from, 'out', $answer);
 
 // --- Agent alert: first question from this buyer for this listing ---
-$stmt = $db->prepare("SELECT COUNT(*) FROM sms_leads WHERE listing_id = ? AND buyer_phone = ? AND direction = 'in'");
-$stmt->execute([$listingId, $from]);
-if ((int)$stmt->fetchColumn() <= 1 && !empty($listing['agent_phone'])) {
-    $alert = "yhome.ai lead for {$listing['address']}: $from asked \"$body\"";
-    sendSms($listing['agent_phone'], $to, $alert);
+$agentPhone = trim((string) ($listing['listing_agent_phone'] ?? ''));
+if (AGENT_ALERTS && $agentPhone !== '') {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM sms_leads WHERE listing_id = ? AND buyer_phone = ? AND direction = 'out'");
+    $stmt->execute([$listingId, $from]);
+    if ((int) $stmt->fetchColumn() <= 2) {
+        sendSms($agentPhone, $to, "yhome.ai lead for {$listing['address']}: $from asked \"$body\"");
+    }
 }
 
 twimlOk();
