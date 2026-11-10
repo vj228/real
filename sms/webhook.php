@@ -247,10 +247,10 @@ if ($status === 'opted_out') {
 if ($status !== 'confirmed') {
     $ask = "yhome.ai: Thanks for texting! Reply YES to confirm you want SMS updates about this listing, or reply STOP to opt out.";
     // only send the ask once per conversation burst (avoid loops): skip if last outbound was the ask
-    $stmt = $db->prepare("SELECT message FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' ORDER BY id DESC LIMIT 1");
+    $stmt = $db->prepare("SELECT message, created_at > NOW() - INTERVAL 2 MINUTE AS recent FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' ORDER BY id DESC LIMIT 1");
     $stmt->execute([$from]);
-    $lastOut = $stmt->fetchColumn();
-    if ($lastOut !== $ask) {
+    $lastOut = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$lastOut || $lastOut['message'] !== $ask || !$lastOut['recent']) {
         sendSms($from, $to, $ask);
         logLead($db, 0, $from, 'out', $ask);
     }
