@@ -126,9 +126,14 @@ function askGemini($prompt) {
         CURLOPT_TIMEOUT => 25,
     ]);
     $resp = curl_exec($ch);
+    $diag = 'http=' . curl_getinfo($ch, CURLINFO_HTTP_CODE) . ' curl=' . curl_error($ch);
     curl_close($ch);
     $data = json_decode($resp, true);
     $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    if (trim($text) === '') {
+        $diag .= ' err=' . ($data['error']['status'] ?? '') . ' ' . substr((string) ($data['error']['message'] ?? substr((string) $resp, 0, 200)), 0, 200);
+        header('X-Gemini-Diag: ' . preg_replace('/[\r\n]+/', ' ', $diag));
+    }
     return trim($text);
 }
 
