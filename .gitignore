@@ -1,6 +1,7 @@
 db.credentials.php
 ai.credentials.php
 site.credentials.php
+twilio.credentials.php
 vendor/
 credentials.json
 cron/listings_backup.json
