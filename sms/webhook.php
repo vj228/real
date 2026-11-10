@@ -126,14 +126,9 @@ function askGemini($prompt) {
         CURLOPT_TIMEOUT => 25,
     ]);
     $resp = curl_exec($ch);
-    $diag = 'http=' . curl_getinfo($ch, CURLINFO_HTTP_CODE) . ' curl=' . curl_error($ch);
     curl_close($ch);
     $data = json_decode($resp, true);
     $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-    if (trim($text) === '') {
-        $diag .= ' err=' . ($data['error']['status'] ?? '') . ' ' . substr((string) ($data['error']['message'] ?? substr((string) $resp, 0, 200)), 0, 200);
-        header('X-Gemini-Diag: ' . preg_replace('/[\r\n]+/', ' ', $diag));
-    }
     return trim($text);
 }
 
@@ -275,9 +270,11 @@ $agentName = trim((string) ($listing['listing_agent_name'] ?? '')) ?: 'the listi
 $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by text about the home at {$listing['address']}. "
     . "Facts: list price " . ($listing['list_price'] !== null ? '$' . number_format((float) $listing['list_price']) : 'unknown')
     . ", {$listing['beds']} bed, {$listing['baths']} bath, {$listing['sqft']} sqft. "
-    . ($estimate
-        ? "yhome.ai AI renovation estimate from listing media: $" . number_format((int) $estimate['total_low']) . " – $" . number_format((int) $estimate['total_high']) . ". "
-        : "No yhome.ai renovation estimate yet. ")
+    . (!$estimate
+        ? "No yhome.ai renovation estimate yet. "
+        : ((int) $estimate['total_high'] > 0
+            ? "yhome.ai AI renovation estimate from listing media: $" . number_format((int) $estimate['total_low']) . " – $" . number_format((int) $estimate['total_high']) . ". "
+            : "yhome.ai AI estimate from listing media found no visible renovation work needed (looks move-in ready); hidden issues need an inspection. "))
     . "Listing agent: $agentName. More details: https://yhome.ai/house.php?id={$listingId} . "
     . "Answer the buyer's question briefly, like a text message, under 300 characters. "
     . "If asked about renovation cost, use the estimate above if available and say clearly it is not a quote. "
@@ -285,6 +282,9 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
+if ($answer === '') {
+    $answer = askGemini($prompt);
+}
 if ($answer === '') {
     $answer = "yhome.ai: Sorry, I couldn't pull that up right now. See https://yhome.ai/house.php?id={$listingId} for details.";
 }
