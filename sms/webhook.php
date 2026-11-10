@@ -221,21 +221,10 @@ if (in_array($upper, ['HELP', 'INFO'], true)) {
     twimlOk();
 }
 
-// --- YES / START: confirm opt-in with the registered opt-in message, then ask which home ---
-if (in_array($upper, ['YES', 'Y', 'START', 'UNSTOP'], true)) {
-    if ($status !== 'confirmed') {
-        setStatus($db, $from, $to, 'confirmed');
-        $optIn = "yhome.ai: You're opted in! You'll get replies about the home listings you ask about. For help, reply HELP. To opt out, reply STOP. Msg & data rates may apply.";
-        sendSms($from, $to, $optIn);
-        logLead($db, 0, $from, 'out', $optIn);
-        $next = $listing
-            ? "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?"
-            : $askAddress;
-        sendSms($from, $to, $next);
-        logLead($db, $listingId, $from, 'out', $next);
-        twimlOk();
-    }
-    // already confirmed -> fall through and treat as a question
+// --- START / UNSTOP: Twilio resubscribes them; continue as a normal conversation ---
+if (in_array($upper, ['START', 'UNSTOP'], true)) {
+    setStatus($db, $from, $to, 'confirmed');
+    $status = 'confirmed';
 }
 
 // --- Already opted out: stay silent ---
@@ -243,25 +232,18 @@ if ($status === 'opted_out') {
     twimlOk();
 }
 
-// --- Not yet confirmed: ask for YES (double opt-in) ---
-if ($status !== 'confirmed') {
-    $ask = "yhome.ai: Thanks for texting! Reply YES to confirm you want SMS updates about this listing, or reply STOP to opt out.";
-    // only send the ask once per conversation burst (avoid loops): skip if last outbound was the ask
-    $stmt = $db->prepare("SELECT message, created_at > NOW() - INTERVAL 2 MINUTE AS recent FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' ORDER BY id DESC LIMIT 1");
-    $stmt->execute([$from]);
-    $lastOut = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$lastOut || $lastOut['message'] !== $ask || !$lastOut['recent']) {
-        sendSms($from, $to, $ask);
-        logLead($db, 0, $from, 'out', $ask);
-    }
-    twimlOk();
+// Texting us first is the opt-in; the first reply carries the opt-out notice.
+$firstContact = $status !== 'confirmed';
+if ($firstContact) {
+    setStatus($db, $from, $to, 'confirmed');
 }
+$optOut = $firstContact ? ' Reply STOP to opt out.' : '';
 
-// --- Confirmed but no house yet: ask for the address ---
+// --- No house yet: ask for the address ---
 if (!$listing) {
-    $msg = preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
+    $msg = (preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
         ? "yhome.ai: I couldn't find that address. Please reply with the street address as shown on the listing page (for example: 323 Santa Rosa Rd)."
-        : $askAddress;
+        : $askAddress) . $optOut;
     sendSms($from, $to, $msg);
     logLead($db, 0, $from, 'out', $msg);
     twimlOk();
@@ -269,7 +251,7 @@ if (!$listing) {
 
 // --- They just named the house: confirm it ---
 if ($justPicked) {
-    $msg = "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?";
+    $msg = "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?" . $optOut;
     sendSms($from, $to, $msg);
     logLead($db, $listingId, $from, 'out', $msg);
     twimlOk();
