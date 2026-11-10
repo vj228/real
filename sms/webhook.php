@@ -3,10 +3,16 @@
 // Twilio incoming SMS -> double opt-in (YES) -> Gemini listing Q&A -> lead capture -> agent alert
 //
 // Live at: https://yhome.ai/sms/webhook.php
-// Secrets come from gitignored files in the site root (the repo is public — never hardcode them here):
-//   db.credentials.php      host, name, user, pass   (same DB as the rest of the site)
-//   ai.credentials.php      gemini_api_key, gemini_model
-//   twilio.credentials.php  twilio_sid, twilio_token (see twilio.credentials.example.php)
+// The repo is public — never hardcode secrets here. They come from:
+//   db.credentials.php      host, name, user, pass   (gitignored; same DB as the rest of the site)
+//   ai.credentials.php      gemini_api_key, gemini_model           (gitignored, optional)
+//   twilio.credentials.php  twilio_sid, twilio_token               (gitignored, optional)
+//   app_secrets DB table    same keys, used when the files above are missing on the server
+
+// Browser visits and anything that isn't a Twilio POST get a blank 200.
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || empty($_POST['From']) || empty($_POST['To'])) {
+    exit;
+}
 
 // ---------------- CONFIG ----------------
 $yhRoot = dirname(__DIR__);
@@ -15,25 +21,30 @@ $yhLoad = static function (string $file) use ($yhRoot): array {
     $cfg = is_readable($path) ? require $path : [];
     return is_array($cfg) ? $cfg : [];
 };
-$yhDb     = $yhLoad('db.credentials.php');
-$yhAi     = $yhLoad('ai.credentials.php');
-$yhTwilio = $yhLoad('twilio.credentials.php');
-
-define('TWILIO_SID',   (string) ($yhTwilio['twilio_sid'] ?? ''));
-define('TWILIO_TOKEN', (string) ($yhTwilio['twilio_token'] ?? ''));
-define('GEMINI_KEY',   (string) ($yhAi['gemini_api_key'] ?? ''));
-define('GEMINI_MODEL', (string) ($yhAi['gemini_model'] ?? 'gemini-3.6-flash'));
+$yhDb = $yhLoad('db.credentials.php');
+$yhSecrets = $yhLoad('ai.credentials.php') + $yhLoad('twilio.credentials.php');
 
 define('DB_HOST', (string) ($yhDb['host'] ?? 'localhost'));
 define('DB_NAME', (string) ($yhDb['name'] ?? ''));
 define('DB_USER', (string) ($yhDb['user'] ?? ''));
 define('DB_PASS', (string) ($yhDb['pass'] ?? ''));
-// ----------------------------------------
 
-// Browser visits and anything that isn't a Twilio POST get a blank 200.
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || empty($_POST['From']) || empty($_POST['To'])) {
-    exit;
+$db = new PDO(
+    'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
+    DB_USER, DB_PASS,
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+);
+foreach ($db->query("SELECT name, value FROM app_secrets")->fetchAll(PDO::FETCH_KEY_PAIR) as $k => $v) {
+    if (empty($yhSecrets[$k])) {
+        $yhSecrets[$k] = $v;
+    }
 }
+
+define('TWILIO_SID',   (string) ($yhSecrets['twilio_sid'] ?? ''));
+define('TWILIO_TOKEN', (string) ($yhSecrets['twilio_token'] ?? ''));
+define('GEMINI_KEY',   (string) ($yhSecrets['gemini_api_key'] ?? ''));
+define('GEMINI_MODEL', (string) ($yhSecrets['gemini_model'] ?? 'gemini-3.6-flash'));
+// ----------------------------------------
 
 // Reject requests not signed by Twilio, so nobody can spoof From and make us text arbitrary numbers.
 // Without a token configured, the webhook stays inert.
@@ -51,7 +62,7 @@ function twilioSignatureValid(): bool {
     $expected = base64_encode(hash_hmac('sha1', $url, TWILIO_TOKEN, true));
     return $sig !== '' && hash_equals($expected, $sig);
 }
-if (!twilioSignatureValid() || DB_NAME === '') {
+if (!twilioSignatureValid()) {
     header('Content-Type: text/xml');
     echo '<Response></Response>';
     exit;
@@ -61,12 +72,6 @@ $from  = $_POST['From'] ?? '';
 $to    = $_POST['To']   ?? '';   // your Twilio number
 $body  = trim($_POST['Body'] ?? '');
 $upper = strtoupper($body);
-
-$db = new PDO(
-    'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-    DB_USER, DB_PASS,
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
 
 // Find the listing mapped to this Twilio number
 $stmt = $db->prepare("SELECT * FROM sms_listings WHERE twilio_number = ? LIMIT 1");
