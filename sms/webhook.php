@@ -97,6 +97,17 @@ function setStatus($db, $from, $to, $status) {
     $stmt->execute([$status, $from, $to]);
 }
 
+// Registered A2P 10DLC messaging service. Carriers filter (error 30007) texts that don't match the
+// campaign's sample messages, and the campaign declares no links or phone numbers in messages.
+const MESSAGING_SERVICE_SID = 'MGc049c9b7fadc8cbd2edc5ded01ad15ca';
+
+function smsSafe($text) {
+    $text = preg_replace('~(https?://|www\.)\S+~i', '', $text);
+    $text = preg_replace('/\b(?!yhome\.ai\b)[a-z0-9-]+\.(com|net|org|ai|io|co)\b/i', '', $text);
+    $text = preg_replace('/\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/', '', $text);
+    return trim(preg_replace('/\s{2,}/', ' ', $text));
+}
+
 function sendSms($toNumber, $fromNumber, $text) {
     $ch = curl_init('https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_SID . '/Messages.json');
     curl_setopt_array($ch, [
@@ -104,9 +115,9 @@ function sendSms($toNumber, $fromNumber, $text) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_USERPWD => TWILIO_SID . ':' . TWILIO_TOKEN,
         CURLOPT_POSTFIELDS => http_build_query([
-            'From' => $fromNumber,
+            'MessagingServiceSid' => MESSAGING_SERVICE_SID,
             'To'   => $toNumber,
-            'Body' => $text,
+            'Body' => smsSafe($text),
         ]),
     ]);
     $resp = curl_exec($ch);
@@ -201,24 +212,27 @@ if ($body !== '') {
     logLead($db, $justPicked ? $listingId : 0, $from, 'in', $body);
 }
 
-// --- STOP: opt out ---
-if (in_array($upper, ['STOP', 'END', 'CANCEL', 'UNSUBSCRIBE', 'QUIT'], true)) {
+// --- STOP / HELP: Twilio's opt-out handling already sends the registered reply; just record it ---
+if (in_array($upper, ['STOP', 'END', 'CANCEL', 'UNSUBSCRIBE', 'QUIT', 'STOPALL', 'OPTOUT', 'REVOKE'], true)) {
     setStatus($db, $from, $to, 'opted_out');
-    $msg = "yhome.ai: You've been unsubscribed. You won't receive more messages. Reply START to rejoin.";
-    sendSms($from, $to, $msg);
-    logLead($db, 0, $from, 'out', $msg);
+    twimlOk();
+}
+if (in_array($upper, ['HELP', 'INFO'], true)) {
     twimlOk();
 }
 
-// --- YES / START: confirm opt-in, then ask which home (or greet if we already know) ---
+// --- YES / START: confirm opt-in with the registered opt-in message, then ask which home ---
 if (in_array($upper, ['YES', 'Y', 'START', 'UNSTOP'], true)) {
     if ($status !== 'confirmed') {
         setStatus($db, $from, $to, 'confirmed');
-        $greeting = $listing
-            ? "yhome.ai: You're in! I'm the AI assistant for " . listingSummary($listing) . ". Ask me anything about this home!"
-            : "yhome.ai: You're in! " . substr($askAddress, strlen('yhome.ai: '));
-        sendSms($from, $to, $greeting);
-        logLead($db, 0, $from, 'out', $greeting);
+        $optIn = "yhome.ai: You're opted in! You'll get replies about the home listings you ask about. For help, reply HELP. To opt out, reply STOP. Msg & data rates may apply.";
+        sendSms($from, $to, $optIn);
+        logLead($db, 0, $from, 'out', $optIn);
+        $next = $listing
+            ? "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?"
+            : $askAddress;
+        sendSms($from, $to, $next);
+        logLead($db, $listingId, $from, 'out', $next);
         twimlOk();
     }
     // already confirmed -> fall through and treat as a question
@@ -231,7 +245,7 @@ if ($status === 'opted_out') {
 
 // --- Not yet confirmed: ask for YES (double opt-in) ---
 if ($status !== 'confirmed') {
-    $ask = "yhome.ai: Thanks for texting! Reply YES to confirm you want SMS replies about homes on yhome.ai, or reply STOP to opt out.";
+    $ask = "yhome.ai: Thanks for texting! Reply YES to confirm you want SMS updates about this listing, or reply STOP to opt out.";
     // only send the ask once per conversation burst (avoid loops): skip if last outbound was the ask
     $stmt = $db->prepare("SELECT message FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' ORDER BY id DESC LIMIT 1");
     $stmt->execute([$from]);
@@ -246,7 +260,7 @@ if ($status !== 'confirmed') {
 // --- Confirmed but no house yet: ask for the address ---
 if (!$listing) {
     $msg = preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
-        ? "yhome.ai: I couldn't find that address on yhome.ai. Please reply with the street address as shown on the house page (for example: 323 Santa Rosa Rd)."
+        ? "yhome.ai: I couldn't find that address. Please reply with the street address as shown on the listing page (for example: 323 Santa Rosa Rd)."
         : $askAddress;
     sendSms($from, $to, $msg);
     logLead($db, 0, $from, 'out', $msg);
@@ -275,19 +289,20 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
         : ((int) $estimate['total_high'] > 0
             ? "yhome.ai AI renovation estimate from listing media: $" . number_format((int) $estimate['total_low']) . " – $" . number_format((int) $estimate['total_high']) . ". "
             : "yhome.ai AI estimate from listing media found no visible renovation work needed (looks move-in ready); hidden issues need an inspection. "))
-    . "Listing agent: $agentName. More details: https://yhome.ai/house.php?id={$listingId} . "
-    . "Answer the buyer's question briefly, like a text message, under 300 characters. "
+    . "Listing agent: $agentName. "
+    . "Answer the buyer's question briefly, like a text message, under 240 characters, plain text. "
+    . "Never include links, URLs, website names, email addresses, or phone numbers. "
     . "If asked about renovation cost, use the estimate above if available and say clearly it is not a quote. "
-    . "If you don't know something, say so and suggest contacting $agentName or the house page. "
+    . "If you don't know something, say so. "
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
 if ($answer === '') {
     $answer = askGemini($prompt);
 }
-if ($answer === '') {
-    $answer = "yhome.ai: Sorry, I couldn't pull that up right now. See https://yhome.ai/house.php?id={$listingId} for details.";
-}
+$answer = $answer === ''
+    ? "yhome.ai: Sorry, I couldn't pull that up right now. Want me to have the listing agent follow up with you? Reply STOP to opt out."
+    : "yhome.ai: " . rtrim(smsSafe($answer)) . " Want me to have the listing agent follow up with you? Reply STOP to opt out.";
 sendSms($from, $to, $answer);
 logLead($db, $listingId, $from, 'out', $answer);
 
