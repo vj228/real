@@ -11,6 +11,9 @@
 
 // sms/test.php includes this file with YH_SMS_TEST defined: Twilio is skipped and replies come back as JSON.
 $yhTest = defined('YH_SMS_TEST');
+// Web lookups can outlast Twilio's 15s webhook timeout; replies go out via the REST API, so keep running.
+ignore_user_abort(true);
+set_time_limit(90);
 
 // Browser visits and anything that isn't a Twilio POST get a blank 200.
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || empty($_POST['From']) || empty($_POST['To'])) {
@@ -130,21 +133,63 @@ function sendSms($toNumber, $fromNumber, $text) {
     return curl_exec($ch);
 }
 
-function askGemini($prompt) {
+function askGemini($prompt, $webSearch = false) {
     $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_MODEL . ':generateContent?key=' . GEMINI_KEY;
-    $payload = json_encode(['contents' => [['parts' => [['text' => $prompt]]]]]);
+    $req = ['contents' => [['parts' => [['text' => $prompt]]]]];
+    if ($webSearch) {
+        $req['tools'] = [['google_search' => new stdClass()]];
+    }
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-        CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_TIMEOUT => 25,
+        CURLOPT_POSTFIELDS => json_encode($req),
+        CURLOPT_TIMEOUT => 40,
     ]);
-    $resp = curl_exec($ch);
-    $data = json_decode($resp, true);
-    $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    $data = json_decode((string) curl_exec($ch), true);
+    $text = '';
+    foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
+        $text .= $part['text'] ?? '';
+    }
     return trim($text);
+}
+
+// Look up an address we don't have with Gemini + Google Search and save it as an SMS-only listing
+// (is_active = 0, search_query = 'sms') so it stays off the public houses page.
+function lookupAndSaveListing($db, $text) {
+    $raw = askGemini(
+        "Search the web for the US home at this address: \"$text\" (assume Arcadia, CA area if no city is given). "
+        . "Reply with only one line of JSON, no other text: "
+        . '{"found":true|false,"address":"street, city, ST zip","zpid":"Zillow zpid or empty","price":number|null,'
+        . '"beds":number|null,"baths":number|null,"sqft":number|null,"agent_name":"listing agent or empty"}. '
+        . "price is the current list price if for sale, else the latest estimated value. Use found=false if you are not sure the address exists.",
+        true
+    );
+    if (!preg_match('/\{.*\}/s', $raw, $m)) {
+        return null;
+    }
+    $j = json_decode($m[0], true);
+    $address = trim((string) ($j['address'] ?? ''));
+    if (empty($j['found']) || !preg_match('/^\d+\s/', $address)) {
+        return null;
+    }
+    $zpid = preg_replace('/\D/', '', (string) ($j['zpid'] ?? ''));
+    $zpid = $zpid !== '' ? $zpid : 'sms-' . substr(md5(strtolower($address)), 0, 16);
+
+    $stmt = $db->prepare("SELECT id FROM zillow_sale_listings WHERE zpid = ? LIMIT 1");
+    $stmt->execute([$zpid]);
+    $id = (int) $stmt->fetchColumn();
+    if (!$id) {
+        $num = static fn($v) => is_numeric($v) ? $v : null;
+        $stmt = $db->prepare("INSERT INTO zillow_sale_listings
+            (last_fetched_at, search_query, zpid, address, list_price, beds, baths, sqft, listing_agent_name, is_active)
+            VALUES (NOW(), 'sms', ?, ?, ?, ?, ?, ?, ?, 0)");
+        $stmt->execute([$zpid, $address, $num($j['price'] ?? null), $num($j['beds'] ?? null), $num($j['baths'] ?? null),
+            $num($j['sqft'] ?? null), trim((string) ($j['agent_name'] ?? '')) ?: null]);
+        $id = (int) $db->lastInsertId();
+    }
+    return loadListing($db, $id);
 }
 
 function twimlOk() {
@@ -159,7 +204,7 @@ function twimlOk() {
 }
 
 function loadListing($db, $id) {
-    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE id = ? AND is_active = 1 LIMIT 1");
+    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE id = ? LIMIT 1");
     $stmt->execute([$id]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
@@ -172,7 +217,7 @@ function findListingInText($db, $text) {
     if (!preg_match('/\b(\d{1,6})\s+[A-Za-z]/', $text, $m)) {
         return null;
     }
-    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE is_active = 1 AND address LIKE ?");
+    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE (is_active = 1 OR search_query = 'sms') AND address LIKE ?");
     $stmt->execute([$m[1] . ' %']);
     $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$candidates) {
@@ -247,6 +292,19 @@ if ($firstContact) {
     setStatus($db, $from, $to, 'confirmed');
 }
 $optOut = $firstContact ? ' Reply STOP to opt out.' : '';
+
+// --- An address we don't have: look it up on the web; if not found, note it for manual follow-up ---
+if (!$justPicked && preg_match('/^\s*\d{1,6}\s+[A-Za-z]/', $body)) {
+    $listing = lookupAndSaveListing($db, $body);
+    if (!$listing) {
+        $msg = "yhome.ai: Thanks! I couldn't find details for that home yet. We'll look into it and text you back." . $optOut;
+        sendSms($from, $to, $msg);
+        logLead($db, 0, $from, 'out', $msg);
+        twimlOk();
+    }
+    $justPicked = true;
+    $listingId = (int) $listing['id'];
+}
 
 // --- No house yet: ask for the address ---
 if (!$listing) {
