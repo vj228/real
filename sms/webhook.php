@@ -172,24 +172,44 @@ function rapidGet($path, array $params) {
     return (int) ($data['status'] ?? 0) === 200 && is_array($data['data'] ?? null) ? $data['data'] : null;
 }
 
-// Address text -> Zillow zpid (1 API call).
-function rapidZpid($text) {
+// Address text -> Zillow address-search URL, which /v1/property resolves in the same call.
+function zillowAddressUrl($text) {
     $query = preg_match('/,|\b\d{5}\b|arcadia/i', $text) ? $text : "$text, Arcadia, CA";
-    foreach (rapidGet('/v1/autocomplete', ['query' => $query])['results'] ?? [] as $r) {
-        if (($r['resultType'] ?? '') === 'Address' && !empty($r['metaData']['zpid'])) {
-            return (string) $r['metaData']['zpid'];
-        }
-    }
-    return null;
+    $slug = trim(preg_replace('/[^A-Za-z0-9,]+/', '-', $query), '-');
+    return 'https://www.zillow.com/homes/' . $slug . '_rb/';
 }
 
-// Full property details for a zpid (1 API call), trimmed to what the bot needs.
-function rapidDetails($zpid) {
-    $d = rapidGet('/v1/property', ['zpid_or_url' => $zpid]);
+// Zillow resolves loose addresses to its closest match ("1212 S Santa Anita" -> "1212 N Santa Anita"),
+// so require the same house number, a shared street word, and no conflicting direction.
+function sameStreetAddress($text, $street) {
+    $norm = static function ($s) {
+        $map = ['north' => 'n', 'south' => 's', 'east' => 'e', 'west' => 'w'];
+        $words = preg_split('/[^a-z0-9]+/', strtolower($s), -1, PREG_SPLIT_NO_EMPTY);
+        return array_map(static fn($w) => $map[$w] ?? $w, $words);
+    };
+    $a = $norm($text);
+    $b = $norm($street);
+    if (!$a || !$b || $a[0] !== $b[0]) {
+        return false;
+    }
+    $dirs = ['n', 's', 'e', 'w'];
+    $dirA = array_values(array_intersect(array_slice($a, 1, 2), $dirs));
+    $dirB = array_values(array_intersect(array_slice($b, 1, 2), $dirs));
+    if ($dirA && $dirB && $dirA[0] !== $dirB[0]) {
+        return false;
+    }
+    $generic = array_merge($dirs, ['st', 'street', 'ave', 'avenue', 'rd', 'road', 'dr', 'drive', 'blvd', 'ln', 'lane', 'way', 'ct', 'pl']);
+    return (bool) array_intersect(array_diff(array_slice($a, 1), $generic), array_diff(array_slice($b, 1), $generic));
+}
+
+// Property details for a zpid or Zillow URL (1 API call), trimmed to what the bot needs.
+function rapidDetails($zpidOrUrl) {
+    $d = rapidGet('/v1/property', ['zpid_or_url' => $zpidOrUrl]);
     if (!$d || empty($d['streetAddress'])) {
         return null;
     }
     return [
+        'zpid' => (string) ($d['zpid'] ?? ''),
         'address' => trim("{$d['streetAddress']}, {$d['city']}, {$d['state']} {$d['zipcode']}"),
         'status' => $d['homeStatus'] ?? null,
         'type' => $d['homeType'] ?? null,
@@ -236,26 +256,23 @@ function homeFacts($db, $listing) {
 }
 
 // An address that isn't an active listing: check every row in the DB first (free),
-// then RapidAPI (2 calls), and save it as an SMS-only listing (is_active = 0, search_query = 'sms')
+// then RapidAPI (1 call), and save it as an SMS-only listing (is_active = 0, search_query = 'sms')
 // so it stays off the public houses page.
 function lookupAndSaveListing($db, $text) {
     $listing = findListingInText($db, $text, true);
     if ($listing) {
         return $listing;
     }
-    $zpid = rapidZpid($text);
-    if ($zpid === null) {
+    $f = rapidDetails(zillowAddressUrl($text));
+    if (!$f || $f['zpid'] === '' || !sameStreetAddress($text, explode(',', $f['address'])[0])) {
         return null;
     }
+    $zpid = $f['zpid'];
     $stmt = $db->prepare("SELECT id FROM zillow_sale_listings WHERE zpid = ? LIMIT 1");
     $stmt->execute([$zpid]);
     $id = (int) $stmt->fetchColumn();
     if ($id) {
         return loadListing($db, $id);
-    }
-    $f = rapidDetails($zpid);
-    if (!$f) {
-        return null;
     }
     $num = static fn($v) => is_numeric($v) ? $v : null;
     $stmt = $db->prepare("INSERT INTO zillow_sale_listings
