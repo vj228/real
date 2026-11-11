@@ -342,7 +342,9 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
     . "Answer the buyer's question briefly, like a text message, under 240 characters, plain text. "
     . "Never include links, URLs, website names, email addresses, or phone numbers. "
     . "If asked about renovation cost, use the estimate above if available and say clearly it is not a quote. "
-    . "If you don't know something, say so. Don't offer to contact the agent; that offer is added after your answer. "
+    . "For facts about this specific home (price, beds, baths, size, year built, HOA, condition), use only the facts above; if a fact isn't listed, say you don't have it. "
+    . "For general questions (schools, neighborhood, commute, the city, buying or financing tips), answer helpfully from your own knowledge. "
+    . "Don't offer to contact the agent; that offer is added after your answer. "
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
