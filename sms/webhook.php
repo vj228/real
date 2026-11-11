@@ -9,6 +9,9 @@
 //   twilio.credentials.php  twilio_sid, twilio_token               (gitignored, optional)
 //   app_secrets DB table    same keys, used when the files above are missing on the server
 
+// sms/test.php includes this file with YH_SMS_TEST defined: Twilio is skipped and replies come back as JSON.
+$yhTest = defined('YH_SMS_TEST');
+
 // Browser visits and anything that isn't a Twilio POST get a blank 200.
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || empty($_POST['From']) || empty($_POST['To'])) {
     exit;
@@ -62,7 +65,7 @@ function twilioSignatureValid(): bool {
     $expected = base64_encode(hash_hmac('sha1', $url, TWILIO_TOKEN, true));
     return $sig !== '' && hash_equals($expected, $sig);
 }
-if (!twilioSignatureValid()) {
+if (!$yhTest && !twilioSignatureValid()) {
     header('Content-Type: text/xml');
     echo '<Response></Response>';
     exit;
@@ -109,6 +112,10 @@ function smsSafe($text) {
 }
 
 function sendSms($toNumber, $fromNumber, $text) {
+    if (defined('YH_SMS_TEST')) {
+        $GLOBALS['yhTestReplies'][] = smsSafe($text);
+        return '';
+    }
     $ch = curl_init('https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_SID . '/Messages.json');
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
@@ -120,9 +127,7 @@ function sendSms($toNumber, $fromNumber, $text) {
             'Body' => smsSafe($text),
         ]),
     ]);
-    $resp = curl_exec($ch);
-    curl_close($ch);
-    return $resp;
+    return curl_exec($ch);
 }
 
 function askGemini($prompt) {
@@ -137,13 +142,17 @@ function askGemini($prompt) {
         CURLOPT_TIMEOUT => 25,
     ]);
     $resp = curl_exec($ch);
-    curl_close($ch);
     $data = json_decode($resp, true);
     $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     return trim($text);
 }
 
 function twimlOk() {
+    if (defined('YH_SMS_TEST')) {
+        header('Content-Type: application/json');
+        echo json_encode(['replies' => $GLOBALS['yhTestReplies'] ?? []]);
+        exit;
+    }
     header('Content-Type: text/xml');
     echo '<Response></Response>';
     exit;
