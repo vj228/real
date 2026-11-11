@@ -1,6 +1,6 @@
 <?php
 // yhome.ai/sms/webhook.php
-// Twilio incoming SMS -> double opt-in (YES) -> Gemini listing Q&A -> lead capture -> agent alert
+// Twilio incoming SMS -> ask which home (address) -> Gemini listing Q&A -> lead capture -> agent alert
 //
 // Live at: https://yhome.ai/sms/webhook.php
 // The repo is public — never hardcode secrets here. They come from:
@@ -133,12 +133,9 @@ function sendSms($toNumber, $fromNumber, $text) {
     return curl_exec($ch);
 }
 
-function askGemini($prompt, $webSearch = false) {
+function askGemini($prompt) {
     $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_MODEL . ':generateContent?key=' . GEMINI_KEY;
     $req = ['contents' => [['parts' => [['text' => $prompt]]]]];
-    if ($webSearch) {
-        $req['tools'] = [['google_search' => new stdClass()]];
-    }
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
@@ -155,38 +152,39 @@ function askGemini($prompt, $webSearch = false) {
     return trim($text);
 }
 
-// Look up an address we don't have with Gemini + Google Search and save it as an SMS-only listing
-// (is_active = 0, search_query = 'sms') so it stays off the public houses page.
-function lookupAndSaveListing($db, $text) {
-    $raw = askGemini(
-        "Search the web for the US home at this address: \"$text\" (assume Arcadia, CA area if no city is given). "
-        . "Reply with only one line of JSON, no other text: "
-        . '{"found":true|false,"address":"street, city, ST zip","zpid":"Zillow zpid or empty","price":number|null,'
-        . '"beds":number|null,"baths":number|null,"sqft":number|null,"agent_name":"listing agent or empty"}. '
-        . "price is the current list price if for sale, else the latest estimated value. Use found=false if you are not sure the address exists.",
-        true
-    );
-    if (!preg_match('/\{.*\}/s', $raw, $m)) {
-        return null;
+// Free US Census geocoder: confirms the address exists and returns it cleaned up
+// ("365 fairview st arcadia" -> "365 Fairview Ave, Arcadia, CA 91007"). No price/beds data.
+function censusAddress($text) {
+    foreach ([$text, "$text, Arcadia, CA"] as $query) {
+        $ch = curl_init('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?' . http_build_query([
+            'address' => $query, 'benchmark' => 'Public_AR_Current', 'format' => 'json',
+        ]));
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10]);
+        $data = json_decode((string) curl_exec($ch), true);
+        $matched = $data['result']['addressMatches'][0]['matchedAddress'] ?? '';
+        $parts = explode(', ', $matched);
+        if (count($parts) === 4) {
+            [$street, $city, $state, $zip] = $parts;
+            return ucwords(strtolower($street)) . ', ' . ucwords(strtolower($city)) . ", $state $zip";
+        }
     }
-    $j = json_decode($m[0], true);
-    $address = trim((string) ($j['address'] ?? ''));
-    if (empty($j['found']) || !preg_match('/^\d+\s/', $address)) {
-        return null;
-    }
-    $zpid = preg_replace('/\D/', '', (string) ($j['zpid'] ?? ''));
-    $zpid = $zpid !== '' ? $zpid : 'sms-' . substr(md5(strtolower($address)), 0, 16);
+    return null;
+}
 
-    $stmt = $db->prepare("SELECT id FROM zillow_sale_listings WHERE zpid = ? LIMIT 1");
-    $stmt->execute([$zpid]);
+// Save an address we don't have as an SMS-only listing (is_active = 0, search_query = 'sms'),
+// so the bot can talk about it while it stays off the public houses page.
+function lookupAndSaveListing($db, $text) {
+    $address = censusAddress($text);
+    if ($address === null) {
+        return null;
+    }
+    $stmt = $db->prepare("SELECT id FROM zillow_sale_listings WHERE address LIKE ? ORDER BY is_active DESC, id DESC LIMIT 1");
+    $stmt->execute([explode(',', $address)[0] . ',%']);
     $id = (int) $stmt->fetchColumn();
     if (!$id) {
-        $num = static fn($v) => is_numeric($v) ? $v : null;
-        $stmt = $db->prepare("INSERT INTO zillow_sale_listings
-            (last_fetched_at, search_query, zpid, address, list_price, beds, baths, sqft, listing_agent_name, is_active)
-            VALUES (NOW(), 'sms', ?, ?, ?, ?, ?, ?, ?, 0)");
-        $stmt->execute([$zpid, $address, $num($j['price'] ?? null), $num($j['beds'] ?? null), $num($j['baths'] ?? null),
-            $num($j['sqft'] ?? null), trim((string) ($j['agent_name'] ?? '')) ?: null]);
+        $stmt = $db->prepare("INSERT INTO zillow_sale_listings (last_fetched_at, search_query, zpid, address, is_active)
+            VALUES (NOW(), 'sms', ?, ?, 0)");
+        $stmt->execute(['sms-' . substr(md5(strtolower($address)), 0, 16), $address]);
         $id = (int) $db->lastInsertId();
     }
     return loadListing($db, $id);
@@ -242,10 +240,11 @@ function findListingInText($db, $text) {
 }
 
 function listingSummary($l) {
-    $price = $l['list_price'] !== null ? '$' . number_format((float) $l['list_price']) : 'price n/a';
+    $price = $l['list_price'] !== null ? '$' . number_format((float) $l['list_price']) : '';
     $beds = $l['beds'] !== null ? rtrim(rtrim((string) $l['beds'], '0'), '.') . ' bed' : '';
     $baths = $l['baths'] !== null ? rtrim(rtrim((string) $l['baths'], '0'), '.') . ' bath' : '';
-    return trim("{$l['address']} — " . implode(', ', array_filter([$beds, $baths, $price])));
+    $facts = implode(', ', array_filter([$beds, $baths, $price]));
+    return $facts === '' ? $l['address'] : "{$l['address']} — $facts";
 }
 
 $askAddress = "yhome.ai: Which home are you asking about? Reply with the street address (for example: 323 Santa Rosa Rd).";
@@ -293,11 +292,11 @@ if ($firstContact) {
 }
 $optOut = $firstContact ? ' Reply STOP to opt out.' : '';
 
-// --- An address we don't have: look it up on the web; if not found, note it for manual follow-up ---
+// --- An address we don't have: confirm it with the Census lookup and save it ---
 if (!$justPicked && preg_match('/^\s*\d{1,6}\s+[A-Za-z]/', $body)) {
     $listing = lookupAndSaveListing($db, $body);
     if (!$listing) {
-        $msg = "yhome.ai: Thanks! I couldn't find details for that home yet. We'll look into it and text you back." . $optOut;
+        $msg = "yhome.ai: I couldn't find that address. Please check it and include the city (for example: 323 Santa Rosa Rd, Arcadia)." . $optOut;
         sendSms($from, $to, $msg);
         logLead($db, 0, $from, 'out', $msg);
         twimlOk();
@@ -332,7 +331,8 @@ $agentName = trim((string) ($listing['listing_agent_name'] ?? '')) ?: 'the listi
 
 $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by text about the home at {$listing['address']}. "
     . "Facts: list price " . ($listing['list_price'] !== null ? '$' . number_format((float) $listing['list_price']) : 'unknown')
-    . ", {$listing['beds']} bed, {$listing['baths']} bath, {$listing['sqft']} sqft. "
+    . ", beds " . ($listing['beds'] ?? 'unknown') . ", baths " . ($listing['baths'] ?? 'unknown')
+    . ", sqft " . ($listing['sqft'] ?? 'unknown') . ". "
     . (!$estimate
         ? "No yhome.ai renovation estimate yet. "
         : ((int) $estimate['total_high'] > 0
