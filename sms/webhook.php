@@ -50,6 +50,7 @@ define('TWILIO_SID',   (string) ($yhSecrets['twilio_sid'] ?? ''));
 define('TWILIO_TOKEN', (string) ($yhSecrets['twilio_token'] ?? ''));
 define('GEMINI_KEY',   (string) ($yhSecrets['gemini_api_key'] ?? ''));
 define('GEMINI_MODEL', (string) ($yhSecrets['gemini_model'] ?? 'gemini-3.6-flash'));
+define('RAPIDAPI_KEY', (string) ($yhSecrets['rapidapi_key'] ?? ''));
 // ----------------------------------------
 
 // Reject requests not signed by Twilio, so nobody can spoof From and make us text arbitrary numbers.
@@ -152,81 +153,125 @@ function askGemini($prompt) {
     return trim($text);
 }
 
-// Free US Census geocoder: confirms the address exists and returns it cleaned up
-// ("365 fairview st arcadia" -> "365 Fairview Ave, Arcadia, CA 91007"). No price/beds data.
-function censusAddress($text) {
-    foreach ([$text, "$text, Arcadia, CA"] as $query) {
-        $ch = curl_init('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?' . http_build_query([
-            'address' => $query, 'benchmark' => 'Public_AR_Current', 'format' => 'json',
-        ]));
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10]);
-        $data = json_decode((string) curl_exec($ch), true);
-        $matched = $data['result']['addressMatches'][0]['matchedAddress'] ?? '';
-        $parts = explode(', ', $matched);
-        if (count($parts) === 4) {
-            [$street, $city, $state, $zip] = $parts;
-            return ucwords(strtolower($street)) . ', ' . ucwords(strtolower($city)) . ", $state $zip";
+// RapidAPI "Real Estate Zillow.com". Free plan has a hard monthly cap, so only call it for homes
+// that aren't in the DB yet, and cache the details per listing in sms_home_facts.
+function rapidGet($path, array $params) {
+    if (RAPIDAPI_KEY === '') {
+        return null;
+    }
+    $ch = curl_init('https://real-estate-zillow-com.p.rapidapi.com' . $path . '?' . http_build_query($params));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 25,
+        CURLOPT_HTTPHEADER => [
+            'x-rapidapi-key: ' . RAPIDAPI_KEY,
+            'x-rapidapi-host: real-estate-zillow-com.p.rapidapi.com',
+        ],
+    ]);
+    $data = json_decode((string) curl_exec($ch), true);
+    return (int) ($data['status'] ?? 0) === 200 && is_array($data['data'] ?? null) ? $data['data'] : null;
+}
+
+// Address text -> Zillow zpid (1 API call).
+function rapidZpid($text) {
+    $query = preg_match('/,|\b\d{5}\b|arcadia/i', $text) ? $text : "$text, Arcadia, CA";
+    foreach (rapidGet('/v1/autocomplete', ['query' => $query])['results'] ?? [] as $r) {
+        if (($r['resultType'] ?? '') === 'Address' && !empty($r['metaData']['zpid'])) {
+            return (string) $r['metaData']['zpid'];
         }
     }
     return null;
 }
 
-// Save an address we don't have as an SMS-only listing (is_active = 0, search_query = 'sms'),
-// so the bot can talk about it while it stays off the public houses page.
-function lookupAndSaveListing($db, $text) {
-    $address = censusAddress($text);
-    if ($address === null) {
+// Full property details for a zpid (1 API call), trimmed to what the bot needs.
+function rapidDetails($zpid) {
+    $d = rapidGet('/v1/property', ['zpid_or_url' => $zpid]);
+    if (!$d || empty($d['streetAddress'])) {
         return null;
     }
-    $stmt = $db->prepare("SELECT id FROM zillow_sale_listings WHERE address LIKE ? ORDER BY is_active DESC, id DESC LIMIT 1");
-    $stmt->execute([explode(',', $address)[0] . ',%']);
-    $id = (int) $stmt->fetchColumn();
-    if (!$id) {
-        $facts = assessorFacts($address);
-        $stmt = $db->prepare("INSERT INTO zillow_sale_listings (last_fetched_at, search_query, zpid, address, beds, baths, sqft, is_active)
-            VALUES (NOW(), 'sms', ?, ?, ?, ?, ?, 0)");
-        $stmt->execute(['sms-' . substr(md5(strtolower($address)), 0, 16), $address,
-            $facts['beds'] ?? null, $facts['baths'] ?? null, $facts['sqft'] ?? null]);
-        $id = (int) $db->lastInsertId();
-    }
-    return loadListing($db, $id);
+    return [
+        'address' => trim("{$d['streetAddress']}, {$d['city']}, {$d['state']} {$d['zipcode']}"),
+        'status' => $d['homeStatus'] ?? null,
+        'type' => $d['homeType'] ?? null,
+        'price' => $d['price'] ?? null,
+        'zestimate' => $d['zestimate'] ?? null,
+        'rent_zestimate' => $d['rentZestimate'] ?? null,
+        'beds' => $d['bedrooms'] ?? null,
+        'baths' => $d['bathrooms'] ?? null,
+        'sqft' => $d['livingArea'] ?? null,
+        'lot_sqft' => $d['lotSize'] ?? null,
+        'year_built' => $d['yearBuilt'] ?? null,
+        'hoa_monthly' => $d['monthlyHoaFee'] ?? null,
+        'tax_assessed' => $d['taxAssessedValue'] ?? null,
+        'days_on_zillow' => $d['daysOnZillow'] ?? null,
+        'last_sold_price' => $d['lastSoldPrice'] ?? null,
+        'agent' => $d['attributionInfo']['agentName'] ?? null,
+        'img' => $d['responsivePhotos'][0]['url'] ?? ($d['thumb'] ?? null),
+        'url' => !empty($d['hdpUrl']) ? 'https://www.zillow.com' . $d['hdpUrl'] : null,
+        'description' => mb_substr(trim((string) ($d['description'] ?? '')), 0, 600),
+    ];
 }
 
-// Free LA County Assessor records: beds, baths, sqft, lot, year built, property type.
-// Only covers LA County (Arcadia and nearby); returns null elsewhere.
-function assessorFacts($address) {
-    static $cache = [];
-    if (array_key_exists($address, $cache)) {
-        return $cache[$address];
+function saveFacts($db, $listingId, array $facts) {
+    $stmt = $db->prepare("REPLACE INTO sms_home_facts (listing_id, facts_json) VALUES (?, ?)");
+    $stmt->execute([$listingId, json_encode($facts)]);
+}
+
+// Cached Zillow details for a listing; fetched once (1 API call) if the listing has a real zpid.
+function homeFacts($db, $listing) {
+    $stmt = $db->prepare("SELECT facts_json FROM sms_home_facts WHERE listing_id = ?");
+    $stmt->execute([$listing['id']]);
+    $json = $stmt->fetchColumn();
+    if ($json !== false) {
+        return json_decode($json, true) ?: null;
     }
-    $parts = array_map('trim', explode(',', strtoupper($address)));
-    $street = preg_replace('/\s+(APT|UNIT|#).*$/', '', $parts[0]);
-    $city = $parts[1] ?? '';
-    $get = static function ($url) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8]);
-        return json_decode((string) curl_exec($ch), true);
-    };
-    $found = null;
-    $search = $get('https://portal.assessor.lacounty.gov/api/search?search=' . rawurlencode(trim("$street $city")));
-    foreach ($search['Parcels'] ?? [] as $p) {
-        if (strpos((string) $p['SitusStreet'], $street) === 0 && ($city === '' || strpos((string) $p['SitusCity'], $city) === 0)) {
-            $d = $get('https://portal.assessor.lacounty.gov/api/parceldetail?ain=' . rawurlencode((string) $p['AIN']));
-            $d = $d['Parcel'] ?? null;
-            if ($d) {
-                $found = [
-                    'beds' => (int) $d['NumOfBeds'] ?: null,
-                    'baths' => (int) $d['NumOfBaths'] ?: null,
-                    'sqft' => (int) $d['SqftMain'] ?: null,
-                    'lot' => (int) $d['SqftLot'] ?: null,
-                    'year' => (int) $d['YearBuilt'] ?: null,
-                    'type' => trim((string) $d['UseType']),
-                ];
-            }
-            break;
-        }
+    if (!ctype_digit((string) $listing['zpid'])) {
+        return null;
     }
-    return $cache[$address] = $found;
+    $facts = rapidDetails($listing['zpid']);
+    if ($facts) {
+        saveFacts($db, (int) $listing['id'], $facts);
+    }
+    return $facts;
+}
+
+// An address that isn't an active listing: check every row in the DB first (free),
+// then RapidAPI (2 calls), and save it as an SMS-only listing (is_active = 0, search_query = 'sms')
+// so it stays off the public houses page.
+function lookupAndSaveListing($db, $text) {
+    $listing = findListingInText($db, $text, true);
+    if ($listing) {
+        return $listing;
+    }
+    $zpid = rapidZpid($text);
+    if ($zpid === null) {
+        return null;
+    }
+    $stmt = $db->prepare("SELECT id FROM zillow_sale_listings WHERE zpid = ? LIMIT 1");
+    $stmt->execute([$zpid]);
+    $id = (int) $stmt->fetchColumn();
+    if ($id) {
+        return loadListing($db, $id);
+    }
+    $f = rapidDetails($zpid);
+    if (!$f) {
+        return null;
+    }
+    $num = static fn($v) => is_numeric($v) ? $v : null;
+    $stmt = $db->prepare("INSERT INTO zillow_sale_listings
+        (last_fetched_at, search_query, zpid, address, detail_url, list_price, zestimate, hoa_fee, tax_assessed_value,
+         beds, baths, sqft, days_on_zillow, img_src, listing_agent_name, is_active)
+        VALUES (NOW(), 'sms', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
+    $stmt->execute([
+        $zpid, $f['address'], $f['url'],
+        $f['status'] === 'FOR_SALE' ? $num($f['price']) : null,
+        $num($f['zestimate']), $num($f['hoa_monthly']), $num($f['tax_assessed']),
+        $num($f['beds']), $num($f['baths']), $num($f['sqft']), $num($f['days_on_zillow']),
+        $f['img'], $f['agent'] ?: null,
+    ]);
+    $id = (int) $db->lastInsertId();
+    saveFacts($db, $id, $f);
+    return loadListing($db, $id);
 }
 
 function twimlOk() {
@@ -246,15 +291,17 @@ function loadListing($db, $id) {
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
-// Match a yhome.ai house link or a street address ("323 Santa Rosa", "1501 S Santa Anita Ave") to an active listing.
-function findListingInText($db, $text) {
+// Match a yhome.ai house link or a street address ("323 Santa Rosa", "1501 S Santa Anita Ave") to a listing:
+// active and SMS-saved ones by default, or any row (including off-market) with $anyStatus.
+function findListingInText($db, $text, $anyStatus = false) {
     if (preg_match('~house\.php\?id=(\d+)~i', $text, $m)) {
         return loadListing($db, (int) $m[1]);
     }
     if (!preg_match('/\b(\d{1,6})\s+[A-Za-z]/', $text, $m)) {
         return null;
     }
-    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE (is_active = 1 OR search_query = 'sms') AND address LIKE ?");
+    $stmt = $db->prepare("SELECT * FROM zillow_sale_listings WHERE "
+        . ($anyStatus ? "1" : "(is_active = 1 OR search_query = 'sms')") . " AND address LIKE ?");
     $stmt->execute([$m[1] . ' %']);
     $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$candidates) {
@@ -331,7 +378,7 @@ if ($firstContact) {
 }
 $optOut = $firstContact ? ' Reply STOP to opt out.' : '';
 
-// --- An address we don't have: confirm it with the Census lookup and save it ---
+// --- An address that isn't an active listing: check the DB, then RapidAPI, and save it ---
 if (!$justPicked && preg_match('/^\s*\d{1,6}\s+[A-Za-z]/', $body)) {
     $listing = lookupAndSaveListing($db, $body);
     if (!$listing) {
@@ -367,14 +414,18 @@ $stmt = $db->prepare("SELECT total_low, total_high FROM ai_analyses WHERE listin
 $stmt->execute([$listingId]);
 $estimate = $stmt->fetch(PDO::FETCH_ASSOC);
 $agentName = trim((string) ($listing['listing_agent_name'] ?? '')) ?: 'the listing agent';
-$county = assessorFacts($listing['address']);
+$zillow = homeFacts($db, $listing);
+if ($zillow) {
+    unset($zillow['img'], $zillow['url'], $zillow['address']);
+}
 
 $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by text about the home at {$listing['address']}. "
     . "Facts: list price " . ($listing['list_price'] !== null ? '$' . number_format((float) $listing['list_price']) : 'unknown')
-    . ", beds " . ($listing['beds'] ?? $county['beds'] ?? 'unknown') . ", baths " . ($listing['baths'] ?? $county['baths'] ?? 'unknown')
-    . ", sqft " . ($listing['sqft'] ?? $county['sqft'] ?? 'unknown') . ". "
-    . ($county
-        ? "County records: {$county['type']}, year built " . ($county['year'] ?? 'unknown') . ", lot " . ($county['lot'] ? number_format($county['lot']) . ' sqft' : 'unknown') . ". "
+    . ", beds " . ($listing['beds'] ?? 'unknown') . ", baths " . ($listing['baths'] ?? 'unknown')
+    . ", sqft " . ($listing['sqft'] ?? 'unknown') . ". "
+    . ($zillow
+        ? "Zillow details (status FOR_SALE means 'price' is the asking price; otherwise the home isn't for sale and 'price' is only an estimate): "
+            . json_encode(array_filter($zillow, static fn($v) => $v !== null && $v !== '')) . ". "
         : '')
     . (!$estimate
         ? "No yhome.ai renovation estimate yet. "
