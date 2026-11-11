@@ -182,12 +182,51 @@ function lookupAndSaveListing($db, $text) {
     $stmt->execute([explode(',', $address)[0] . ',%']);
     $id = (int) $stmt->fetchColumn();
     if (!$id) {
-        $stmt = $db->prepare("INSERT INTO zillow_sale_listings (last_fetched_at, search_query, zpid, address, is_active)
-            VALUES (NOW(), 'sms', ?, ?, 0)");
-        $stmt->execute(['sms-' . substr(md5(strtolower($address)), 0, 16), $address]);
+        $facts = assessorFacts($address);
+        $stmt = $db->prepare("INSERT INTO zillow_sale_listings (last_fetched_at, search_query, zpid, address, beds, baths, sqft, is_active)
+            VALUES (NOW(), 'sms', ?, ?, ?, ?, ?, 0)");
+        $stmt->execute(['sms-' . substr(md5(strtolower($address)), 0, 16), $address,
+            $facts['beds'] ?? null, $facts['baths'] ?? null, $facts['sqft'] ?? null]);
         $id = (int) $db->lastInsertId();
     }
     return loadListing($db, $id);
+}
+
+// Free LA County Assessor records: beds, baths, sqft, lot, year built, property type.
+// Only covers LA County (Arcadia and nearby); returns null elsewhere.
+function assessorFacts($address) {
+    static $cache = [];
+    if (array_key_exists($address, $cache)) {
+        return $cache[$address];
+    }
+    $parts = array_map('trim', explode(',', strtoupper($address)));
+    $street = preg_replace('/\s+(APT|UNIT|#).*$/', '', $parts[0]);
+    $city = $parts[1] ?? '';
+    $get = static function ($url) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8]);
+        return json_decode((string) curl_exec($ch), true);
+    };
+    $found = null;
+    $search = $get('https://portal.assessor.lacounty.gov/api/search?search=' . rawurlencode(trim("$street $city")));
+    foreach ($search['Parcels'] ?? [] as $p) {
+        if (strpos((string) $p['SitusStreet'], $street) === 0 && ($city === '' || strpos((string) $p['SitusCity'], $city) === 0)) {
+            $d = $get('https://portal.assessor.lacounty.gov/api/parceldetail?ain=' . rawurlencode((string) $p['AIN']));
+            $d = $d['Parcel'] ?? null;
+            if ($d) {
+                $found = [
+                    'beds' => (int) $d['NumOfBeds'] ?: null,
+                    'baths' => (int) $d['NumOfBaths'] ?: null,
+                    'sqft' => (int) $d['SqftMain'] ?: null,
+                    'lot' => (int) $d['SqftLot'] ?: null,
+                    'year' => (int) $d['YearBuilt'] ?: null,
+                    'type' => trim((string) $d['UseType']),
+                ];
+            }
+            break;
+        }
+    }
+    return $cache[$address] = $found;
 }
 
 function twimlOk() {
@@ -328,11 +367,15 @@ $stmt = $db->prepare("SELECT total_low, total_high FROM ai_analyses WHERE listin
 $stmt->execute([$listingId]);
 $estimate = $stmt->fetch(PDO::FETCH_ASSOC);
 $agentName = trim((string) ($listing['listing_agent_name'] ?? '')) ?: 'the listing agent';
+$county = assessorFacts($listing['address']);
 
 $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by text about the home at {$listing['address']}. "
     . "Facts: list price " . ($listing['list_price'] !== null ? '$' . number_format((float) $listing['list_price']) : 'unknown')
-    . ", beds " . ($listing['beds'] ?? 'unknown') . ", baths " . ($listing['baths'] ?? 'unknown')
-    . ", sqft " . ($listing['sqft'] ?? 'unknown') . ". "
+    . ", beds " . ($listing['beds'] ?? $county['beds'] ?? 'unknown') . ", baths " . ($listing['baths'] ?? $county['baths'] ?? 'unknown')
+    . ", sqft " . ($listing['sqft'] ?? $county['sqft'] ?? 'unknown') . ". "
+    . ($county
+        ? "County records: {$county['type']}, year built " . ($county['year'] ?? 'unknown') . ", lot " . ($county['lot'] ? number_format($county['lot']) . ' sqft' : 'unknown') . ". "
+        : '')
     . (!$estimate
         ? "No yhome.ai renovation estimate yet. "
         : ((int) $estimate['total_high'] > 0
