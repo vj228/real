@@ -22,6 +22,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || empty($_POST['From']) || em
 
 // ---------------- CONFIG ----------------
 $yhRoot = dirname(__DIR__);
+require_once $yhRoot . '/helpers/listing_agent.php';
 $yhLoad = static function (string $file) use ($yhRoot): array {
     $path = $yhRoot . '/' . $file;
     $cfg = is_readable($path) ? require $path : [];
@@ -238,10 +239,73 @@ function rapidDetails($zpidOrUrl) {
         'img' => $d['responsivePhotos'][0]['url'] ?? ($d['thumb'] ?? null),
         'url' => !empty($d['hdpUrl']) ? 'https://www.zillow.com' . $d['hdpUrl'] : null,
         'description' => mb_substr(trim((string) ($d['description'] ?? '')), 0, 600),
+        'row' => rapidListingRow($d),
+    ];
+}
+
+// zillow_sale_listings columns from the same /v1/property response, matching what cron/rapid.php stores.
+function rapidListingRow(array $d) {
+    $num = static fn($v) => is_numeric($v) ? (float) $v : null;
+    $forSale = ($d['homeStatus'] ?? '') === 'FOR_SALE';
+    $price = $forSale ? $num($d['price'] ?? null) : null;
+    $zest = $num($d['zestimate'] ?? null);
+    $sqft = $num($d['livingArea'] ?? null);
+
+    $images = [];
+    foreach ($d['responsivePhotos'] ?? [] as $p) {
+        $jpegs = $p['mixedSources']['jpeg'] ?? [];
+        $url = $jpegs ? end($jpegs)['url'] : ($p['url'] ?? null);
+        if ($url) {
+            $images[] = $url;
+        }
+    }
+
+    $taxPaid = null;
+    foreach ($d['taxHistory'] ?? [] as $t) {
+        if (is_numeric($t['taxPaid'] ?? null)) {
+            $taxPaid = (float) $t['taxPaid'];
+            break;
+        }
+    }
+    if ($taxPaid === null && $num($d['taxAssessedValue'] ?? null) && $num($d['propertyTaxRate'] ?? null)) {
+        $taxPaid = round($d['taxAssessedValue'] * $d['propertyTaxRate'] / 100, 2);
+    }
+
+    $agent = listing_agent_from_rapid_payload($d);
+    $agent['phone'] = $agent['phone']
+        ?? listing_agent_phone(listing_agent_str($d['attributionInfo']['listingAgentAttributionContact'] ?? null))
+        ?? listing_agent_phone(listing_agent_str($d['attributionInfo']['listingAttributionContact'] ?? null));
+    $agent['broker'] = $agent['broker'] ?? listing_agent_str($d['brokerageName'] ?? null);
+    $hasAgent = $agent['name'] || $agent['phone'] || $agent['email'] || $agent['broker'];
+
+    return [
+        'detail_url' => !empty($d['hdpUrl']) ? 'https://www.zillow.com' . $d['hdpUrl'] : null,
+        'list_price' => $price,
+        'zestimate' => $zest,
+        'price_vs_zestimate_pct' => $price && $zest ? round(($price - $zest) / $zest * 100, 2) : null,
+        'price_per_sqft' => $price && $sqft ? round($price / $sqft, 2) : null,
+        'property_tax_annual' => $taxPaid,
+        'tax_assessed_value' => $num($d['taxAssessedValue'] ?? null),
+        'hoa_fee' => $num($d['monthlyHoaFee'] ?? null),
+        'beds' => $num($d['bedrooms'] ?? null),
+        'baths' => $num($d['bathrooms'] ?? null),
+        'sqft' => $sqft !== null ? (int) $sqft : null,
+        'days_on_zillow' => is_numeric($d['daysOnZillow'] ?? null) ? (int) $d['daysOnZillow'] : null,
+        'img_src' => $images[0] ?? null,
+        'images_json' => $images ? json_encode($images, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+        'listing_agent_name' => $agent['name'],
+        'listing_agent_phone' => $agent['phone'],
+        'listing_agent_email' => $agent['email'],
+        'listing_broker_name' => $agent['broker'],
+        'listing_agent_source' => $hasAgent ? 'rapidapi' : null,
+        'listing_agent_raw_json' => $hasAgent ? json_encode([
+            'name' => $agent['name'], 'phone' => $agent['phone'], 'email' => $agent['email'], 'broker' => $agent['broker'],
+        ], JSON_UNESCAPED_UNICODE) : null,
     ];
 }
 
 function saveFacts($db, $listingId, array $facts) {
+    unset($facts['row']);
     $stmt = $db->prepare("REPLACE INTO sms_home_facts (listing_id, facts_json) VALUES (?, ?)");
     $stmt->execute([$listingId, json_encode($facts)]);
 }
@@ -283,18 +347,13 @@ function lookupAndSaveListing($db, $text) {
     if ($id) {
         return loadListing($db, $id);
     }
-    $num = static fn($v) => is_numeric($v) ? $v : null;
+    $row = $f['row'];
+    $cols = array_keys($row);
     $stmt = $db->prepare("INSERT INTO zillow_sale_listings
-        (last_fetched_at, search_query, zpid, address, detail_url, list_price, zestimate, hoa_fee, tax_assessed_value,
-         beds, baths, sqft, days_on_zillow, img_src, listing_agent_name, is_active)
-        VALUES (NOW(), 'sms', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
-    $stmt->execute([
-        $zpid, $f['address'], $f['url'],
-        $f['status'] === 'FOR_SALE' ? $num($f['price']) : null,
-        $num($f['zestimate']), $num($f['hoa_monthly']), $num($f['tax_assessed']),
-        $num($f['beds']), $num($f['baths']), $num($f['sqft']), $num($f['days_on_zillow']),
-        $f['img'], $f['agent'] ?: null,
-    ]);
+        (last_fetched_at, listing_agent_fetched_at, search_query, zpid, address, is_active, " . implode(', ', $cols) . ")
+        VALUES (NOW(), " . ($row['listing_agent_source'] ? 'NOW()' : 'NULL') . ", 'sms', ?, ?, 0, "
+        . implode(', ', array_fill(0, count($cols), '?')) . ")");
+    $stmt->execute(array_merge([$zpid, $f['address']], array_values($row)));
     $id = (int) $db->lastInsertId();
     saveFacts($db, $id, $f);
     return loadListing($db, $id);
@@ -442,7 +501,7 @@ $estimate = $stmt->fetch(PDO::FETCH_ASSOC);
 $agentName = trim((string) ($listing['listing_agent_name'] ?? '')) ?: 'the listing agent';
 $zillow = homeFacts($db, $listing);
 if ($zillow) {
-    unset($zillow['img'], $zillow['url'], $zillow['address']);
+    unset($zillow['img'], $zillow['url'], $zillow['address'], $zillow['row']);
 }
 
 $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by text about the home at {$listing['address']}. "
