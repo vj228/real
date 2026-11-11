@@ -49,7 +49,6 @@ foreach ($db->query("SELECT name, value FROM app_secrets")->fetchAll(PDO::FETCH_
 define('TWILIO_SID',   (string) ($yhSecrets['twilio_sid'] ?? ''));
 define('TWILIO_TOKEN', (string) ($yhSecrets['twilio_token'] ?? ''));
 define('GEMINI_KEY',   (string) ($yhSecrets['gemini_api_key'] ?? ''));
-define('GEMINI_MODEL', (string) ($yhSecrets['gemini_model'] ?? 'gemini-3.6-flash'));
 define('RAPIDAPI_KEY', (string) ($yhSecrets['rapidapi_key'] ?? ''));
 // ----------------------------------------
 
@@ -134,23 +133,33 @@ function sendSms($toNumber, $fromNumber, $text) {
     return curl_exec($ch);
 }
 
+// Free-tier daily caps are per model (gemini-3.6-flash allows only ~20/day), so use models with
+// higher free limits and fall through to the next one when a model errors or hits its cap.
+const SMS_AI_MODELS = ['gemini-3.5-flash-lite', 'gemma-4-31b-it'];
+
 function askGemini($prompt) {
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . GEMINI_MODEL . ':generateContent?key=' . GEMINI_KEY;
-    $req = ['contents' => [['parts' => [['text' => $prompt]]]]];
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-        CURLOPT_POSTFIELDS => json_encode($req),
-        CURLOPT_TIMEOUT => 40,
-    ]);
-    $data = json_decode((string) curl_exec($ch), true);
-    $text = '';
-    foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
-        $text .= $part['text'] ?? '';
+    $req = json_encode(['contents' => [['parts' => [['text' => $prompt]]]]]);
+    foreach (SMS_AI_MODELS as $model) {
+        $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . GEMINI_KEY);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $req,
+            CURLOPT_TIMEOUT => 40,
+        ]);
+        $data = json_decode((string) curl_exec($ch), true);
+        $text = '';
+        foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
+            if (empty($part['thought'])) {
+                $text .= $part['text'] ?? '';
+            }
+        }
+        if (trim($text) !== '') {
+            return trim($text);
+        }
     }
-    return trim($text);
+    return '';
 }
 
 // RapidAPI "Real Estate Zillow.com". Free plan has a hard monthly cap, so only call it for homes
@@ -459,9 +468,6 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
-if ($answer === '') {
-    $answer = askGemini($prompt);
-}
 $answer = $answer === ''
     ? "yhome.ai: Sorry, I couldn't pull that up right now. Want me to have the listing agent follow up with you? Reply STOP to opt out."
     : "yhome.ai: " . rtrim(smsSafe($answer)) . " Want me to have the listing agent follow up with you? Reply STOP to opt out.";
