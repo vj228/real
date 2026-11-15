@@ -94,9 +94,26 @@ if (!$sub) {
 }
 $status = $sub['status'];
 
-function logLead($db, $listingId, $phone, $direction, $message) {
-    $stmt = $db->prepare("INSERT INTO sms_leads (listing_id, buyer_phone, direction, message) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$listingId, $phone, $direction, $message]);
+function logLead($db, $listingId, $phone, $direction, $message, $cannotAnswer = 0) {
+    $stmt = $db->prepare("INSERT INTO sms_leads (listing_id, buyer_phone, direction, message, cannot_answer) VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$listingId, $phone, $direction, $message, $cannotAnswer ? 1 : 0]);
+    return (int) $db->lastInsertId();
+}
+
+function flagLeadCannotAnswer($db, $leadId, $listingId = 0) {
+    if ($leadId > 0) {
+        $db->prepare("UPDATE sms_leads SET cannot_answer = 1, listing_id = IF(listing_id > 0, listing_id, ?) WHERE id = ?")
+            ->execute([$listingId, $leadId]);
+    }
+}
+
+// True when the buyer asked something we couldn't answer from our facts (for day-by-day improvement).
+function answerNeedsInfo($answer) {
+    $a = strtolower($answer);
+    return $answer === ''
+        || str_contains($a, "couldn't pull that up")
+        || str_contains($a, 'need_info')
+        || (bool) preg_match("/\b(i don't have|do not have|don't have|no (idea|information|info|data|record)|not sure|can't tell|cannot tell|isn't available|is not available|aren't available|no .{0,40} (listed|on file|in my (data|records)))\b/i", $answer);
 }
 
 function setStatus($db, $from, $to, $status) {
@@ -453,8 +470,9 @@ if (!$listing) {
 $listingId = $listing ? (int) $listing['id'] : 0;
 
 // Log every inbound message
+$inboundLeadId = 0;
 if ($body !== '') {
-    logLead($db, $justPicked ? $listingId : 0, $from, 'in', $body);
+    $inboundLeadId = logLead($db, $justPicked ? $listingId : 0, $from, 'in', $body);
 }
 
 // --- STOP / HELP: Twilio's opt-out handling already sends the registered reply; just record it ---
@@ -552,14 +570,21 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
     . "If open_house is missing: if status is not FOR_SALE, say it isn't currently listed so there is no open house; if it is FOR_SALE, say no open house is listed right now and suggest asking the listing agent. "
     . "For ADU, zoning, permits, schools, neighborhood, commute, city rules, buying or financing tips: answer helpfully from your own knowledge using lot size/city when useful, and say they should confirm with the city or an agent. "
     . "Don't pad answers by repeating beds/baths/sqft unless asked. Don't offer to contact the agent. "
+    . "After your text reply, on a new line write exactly OK if you answered from the facts/knowledge above, or NEED_INFO if you are missing the specific info the buyer asked for. "
     . "Buyer asks: \"$body\"";
 
-$answer = askGemini($prompt);
+$rawAnswer = askGemini($prompt);
+$needsInfo = (bool) preg_match('/\bNEED_INFO\b/i', $rawAnswer) || $rawAnswer === '';
+$answer = trim(preg_replace('/\b(NEED_INFO|OK)\b/i', '', $rawAnswer));
 $answer = $answer === ''
     ? "yhome.ai: Sorry, I couldn't pull that up right now."
     : "yhome.ai: " . rtrim(smsSafe($answer));
+if ($needsInfo || answerNeedsInfo($answer)) {
+    flagLeadCannotAnswer($db, $inboundLeadId, $listingId);
+    $needsInfo = true;
+}
 sendSms($from, $to, $answer);
-logLead($db, $listingId, $from, 'out', $answer);
+logLead($db, $listingId, $from, 'out', $answer, $needsInfo);
 
 // --- Agent alert: first question from this buyer for this listing ---
 $agentPhone = trim((string) ($listing['listing_agent_phone'] ?? ''));
