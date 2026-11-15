@@ -456,18 +456,16 @@ if ($status === 'opted_out') {
     twimlOk();
 }
 
-// Texting us first is the opt-in; the first reply carries the opt-out notice.
-$firstContact = $status !== 'confirmed';
-if ($firstContact) {
+// Texting us first is the opt-in. STOP is handled by Twilio's automatic opt-out reply.
+if ($status !== 'confirmed') {
     setStatus($db, $from, $to, 'confirmed');
 }
-$optOut = $firstContact ? ' Reply STOP to opt out.' : '';
 
 // --- An address that isn't an active listing: check the DB, then RapidAPI, and save it ---
 if (!$justPicked && preg_match('/^\s*\d{1,6}\s+[A-Za-z]/', $body)) {
     $listing = lookupAndSaveListing($db, $body);
     if (!$listing) {
-        $msg = "yhome.ai: I couldn't find that address. Please check it and include the city (for example: 323 Santa Rosa Rd, Arcadia)." . $optOut;
+        $msg = "yhome.ai: I couldn't find that address. Please check it and include the city (for example: 323 Santa Rosa Rd, Arcadia).";
         sendSms($from, $to, $msg);
         logLead($db, 0, $from, 'out', $msg);
         twimlOk();
@@ -478,9 +476,9 @@ if (!$justPicked && preg_match('/^\s*\d{1,6}\s+[A-Za-z]/', $body)) {
 
 // --- No house yet: ask for the address ---
 if (!$listing) {
-    $msg = (preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
+    $msg = preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
         ? "yhome.ai: I couldn't find that address. Please reply with the street address as shown on the listing page (for example: 323 Santa Rosa Rd)."
-        : $askAddress) . $optOut;
+        : $askAddress;
     sendSms($from, $to, $msg);
     logLead($db, 0, $from, 'out', $msg);
     twimlOk();
@@ -488,7 +486,7 @@ if (!$listing) {
 
 // --- They just named the house: confirm it ---
 if ($justPicked) {
-    $msg = "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?" . $optOut;
+    $msg = "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?";
     sendSms($from, $to, $msg);
     logLead($db, $listingId, $from, 'out', $msg);
     twimlOk();
@@ -523,13 +521,13 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
     . "If asked about renovation cost, use the estimate above if available and say clearly it is not a quote. "
     . "For facts about this specific home (price, beds, baths, size, year built, HOA, condition), use only the facts above; if a fact isn't listed, say you don't have it. "
     . "For general questions (schools, neighborhood, commute, the city, buying or financing tips), answer helpfully from your own knowledge. "
-    . "Don't offer to contact the agent; that offer is added after your answer. "
+    . "Don't offer to contact the agent. "
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
 $answer = $answer === ''
-    ? "yhome.ai: Sorry, I couldn't pull that up right now. Want me to have the listing agent follow up with you? Reply STOP to opt out."
-    : "yhome.ai: " . rtrim(smsSafe($answer)) . " Want me to have the listing agent follow up with you? Reply STOP to opt out.";
+    ? "yhome.ai: Sorry, I couldn't pull that up right now."
+    : "yhome.ai: " . rtrim(smsSafe($answer));
 sendSms($from, $to, $answer);
 logLead($db, $listingId, $from, 'out', $answer);
 
