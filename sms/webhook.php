@@ -421,11 +421,9 @@ function listingSummary($l) {
 $askAddress = "yhome.ai: Which home are you asking about? Reply with the street address (for example: 323 Santa Rosa Rd).";
 
 // Which house: one named in this message, else the last one this buyer asked about.
-// Greetings like "hi" start fresh and ask for the address again.
-$isGreeting = (bool) preg_match('/^(hi|hii+|hello|hey|yo|sup|good\s*(morning|afternoon|evening)|thanks?|thank you)[!?.]*$/i', $body);
 $listing = findListingInText($db, $body);
 $justPicked = $listing !== null;
-if (!$listing && !$isGreeting) {
+if (!$listing) {
     $stmt = $db->prepare("SELECT listing_id FROM sms_leads WHERE buyer_phone = ? AND listing_id > 0 ORDER BY id DESC LIMIT 1");
     $stmt->execute([$from]);
     $lastId = (int) $stmt->fetchColumn();
