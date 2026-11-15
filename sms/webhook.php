@@ -235,12 +235,33 @@ function rapidDetails($zpidOrUrl) {
         'tax_assessed' => $d['taxAssessedValue'] ?? null,
         'days_on_zillow' => $d['daysOnZillow'] ?? null,
         'last_sold_price' => $d['lastSoldPrice'] ?? null,
+        'open_house' => rapidOpenHouse($d['openHouseSchedule'] ?? []),
         'agent' => $d['attributionInfo']['agentName'] ?? null,
         'img' => $d['responsivePhotos'][0]['url'] ?? ($d['thumb'] ?? null),
         'url' => !empty($d['hdpUrl']) ? 'https://www.zillow.com' . $d['hdpUrl'] : null,
         'description' => mb_substr(trim((string) ($d['description'] ?? '')), 0, 600),
         'row' => rapidListingRow($d),
     ];
+}
+
+// Flatten Zillow openHouseSchedule into a short text the AI can use (or null if none listed).
+function rapidOpenHouse($schedule) {
+    if (!is_array($schedule) || $schedule === []) {
+        return null;
+    }
+    $parts = [];
+    foreach ($schedule as $e) {
+        if (!is_array($e)) {
+            continue;
+        }
+        $day = trim((string) ($e['startTime'] ?? $e['date'] ?? $e['day'] ?? ''));
+        $end = trim((string) ($e['endTime'] ?? ''));
+        $line = trim($day . ($end !== '' && $day !== '' ? " – $end" : $end));
+        if ($line !== '') {
+            $parts[] = $line;
+        }
+    }
+    return $parts ? implode('; ', array_slice($parts, 0, 3)) : null;
 }
 
 // zillow_sale_listings columns from the same /v1/property response, matching what cron/rapid.php stores.
@@ -492,6 +513,14 @@ if ($justPicked) {
     twimlOk();
 }
 
+// --- Greeting while a home is already remembered: reply without using Gemini ---
+if (preg_match('/^(hi|hii+|hello|hey|yo|sup|good\s*(morning|afternoon|evening))[!?.]*$/i', $body)) {
+    $msg = "yhome.ai: Still helping with " . listingSummary($listing) . ". What would you like to know about this home?";
+    sendSms($from, $to, $msg);
+    logLead($db, $listingId, $from, 'out', $msg);
+    twimlOk();
+}
+
 // --- Answer the question with Gemini ---
 $stmt = $db->prepare("SELECT total_low, total_high FROM ai_analyses WHERE listing_id = ? ORDER BY analyzed_at DESC, id DESC LIMIT 1");
 $stmt->execute([$listingId]);
@@ -519,9 +548,10 @@ $prompt = "You are a friendly AI assistant for yhome.ai answering a homebuyer by
     . "Answer the buyer's question briefly, like a text message, under 240 characters, plain text. "
     . "Never include links, URLs, website names, email addresses, or phone numbers. "
     . "If asked about renovation cost, use the estimate above if available and say clearly it is not a quote. "
-    . "For facts about this specific home (price, beds, baths, size, year built, HOA, condition), use only the facts above; if a fact isn't listed, say you don't have it. "
-    . "For general questions (schools, neighborhood, commute, the city, buying or financing tips), answer helpfully from your own knowledge. "
-    . "Don't offer to contact the agent. "
+    . "For listed facts about this home (price, beds, baths, size, year built, HOA, last sold, open_house), use only the facts above. "
+    . "If open_house is missing: if status is not FOR_SALE, say it isn't currently listed so there is no open house; if it is FOR_SALE, say no open house is listed right now and suggest asking the listing agent. "
+    . "For ADU, zoning, permits, schools, neighborhood, commute, city rules, buying or financing tips: answer helpfully from your own knowledge using lot size/city when useful, and say they should confirm with the city or an agent. "
+    . "Don't pad answers by repeating beds/baths/sqft unless asked. Don't offer to contact the agent. "
     . "Buyer asks: \"$body\"";
 
 $answer = askGemini($prompt);
