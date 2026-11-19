@@ -6,13 +6,11 @@ declare(strict_types=1);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yHome — Know the renovation cost before you make an offer</title>
-    <meta name="description" content="Upload a house walkthrough video and get an AI-powered renovation cost estimate from yHome before you make an offer.">
+    <title>yHome.ai — Text us about any home</title>
+    <meta name="description" content="Text yHome.ai to ask about a listing — price, condition, schools, open house — and get quick answers by SMS.">
     <link rel="stylesheet" href="/style.css">
     <style>
-        .home-page {
-            padding-bottom: 48px;
-        }
+        .home-page { padding-bottom: 48px; }
 
         .home-hero {
             padding: 0 0 72px;
@@ -22,9 +20,7 @@ declare(strict_types=1);
                 linear-gradient(180deg, #ffffff 0%, #f7fbf8 70%, #edf6f1 100%);
         }
 
-        .home-hero__inner {
-            padding-top: 24px;
-        }
+        .home-hero__inner { padding-top: 24px; }
 
         .home-hero__grid {
             display: grid;
@@ -46,23 +42,17 @@ declare(strict_types=1);
             padding-top: 4px;
         }
 
-        .home-hero__visual {
-            min-width: 0;
-        }
+        .home-hero__visual { min-width: 0; }
 
         .home-hero__visual img {
             display: block;
             width: 100%;
             height: clamp(240px, 42vw, 460px);
             object-fit: cover;
-            border-radius: 0;
-            box-shadow: none;
         }
 
         @media (min-width: 900px) {
-            .home-hero__visual img {
-                height: min(520px, 58vh);
-            }
+            .home-hero__visual img { height: min(520px, 58vh); }
         }
 
         .home-hero__title {
@@ -85,32 +75,77 @@ declare(strict_types=1);
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 16px;
+            gap: 14px;
         }
 
-        .home-hero__actions .button {
-            border-radius: 999px;
-            padding: 18px 32px;
-            font-size: 1.08rem;
+        .home-text-cta {
+            display: inline-block;
+            padding: 18px 24px;
+            border: 2px solid var(--accent, #2e9d78);
+            border-radius: 14px;
+            background: #ebf8f1;
+            color: var(--accent-dark, #176948);
+            font-size: clamp(1.15rem, 2.4vw, 1.4rem);
             font-weight: 800;
-            min-height: 56px;
-            box-shadow: 0 16px 32px rgba(46, 157, 120, 0.28);
+            line-height: 1.3;
+            letter-spacing: -0.01em;
+            text-decoration: none;
+            box-shadow: 0 12px 28px rgba(46, 157, 120, 0.22);
         }
 
-        .home-section {
-            padding: 72px 0;
+        .home-text-cta:hover { background: #dcf2e6; }
+        .home-text-cta strong { white-space: nowrap; }
+
+        .home-text-consent {
+            margin: 0;
+            max-width: 32rem;
+            font-size: 0.82rem;
+            color: var(--muted);
+            line-height: 1.45;
         }
+
+        .home-hero__secondary {
+            margin-top: 4px;
+            font-weight: 700;
+            color: var(--accent-dark);
+            text-decoration: none;
+        }
+
+        .home-hero__secondary:hover { text-decoration: underline; }
+
+        .home-section { padding: 72px 0; }
 
         .home-section--soft {
             background: linear-gradient(180deg, #f7fbf8 0%, #edf6f1 100%);
         }
 
-        .home-section__inner {
-            max-width: 40rem;
+        .home-section__inner { max-width: 40rem; }
+        .home-section__inner--wide { max-width: 52rem; }
+
+        .home-kicker {
+            margin: 0 0 12px;
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent-dark);
         }
 
-        .home-section__inner--wide {
-            max-width: 52rem;
+        .home-section h2,
+        .home-value__copy h2 {
+            margin: 0 0 16px;
+            font-size: clamp(1.75rem, 3.6vw, 2.4rem);
+            line-height: 1.15;
+            letter-spacing: -0.035em;
+            font-weight: 800;
+        }
+
+        .home-section p.lead,
+        .home-value__copy .lead {
+            margin: 0;
+            font-size: clamp(1.02rem, 2vw, 1.12rem);
+            color: var(--muted);
+            line-height: 1.6;
         }
 
         .home-value {
@@ -127,64 +162,11 @@ declare(strict_types=1);
             }
         }
 
-        .home-value__copy h2 {
-            margin: 0 0 16px;
-            font-size: clamp(1.75rem, 3.6vw, 2.4rem);
-            line-height: 1.15;
-            letter-spacing: -0.035em;
-            font-weight: 800;
-        }
-
-        .home-value__copy .lead {
-            margin: 0;
-            font-size: clamp(1.02rem, 2vw, 1.12rem);
-            color: var(--muted);
-            line-height: 1.6;
-        }
-
         .home-value__media img {
             display: block;
             width: 100%;
             height: clamp(220px, 36vw, 360px);
             object-fit: cover;
-        }
-
-        .home-rooms {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 28px;
-        }
-
-        .home-rooms img {
-            display: block;
-            width: 100%;
-            height: clamp(88px, 16vw, 140px);
-            object-fit: cover;
-        }
-
-        .home-kicker {
-            margin: 0 0 12px;
-            font-size: 0.82rem;
-            font-weight: 800;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            color: var(--accent-dark);
-        }
-
-        .home-section h2 {
-            margin: 0 0 16px;
-            font-size: clamp(1.75rem, 3.6vw, 2.4rem);
-            line-height: 1.15;
-            letter-spacing: -0.035em;
-            font-weight: 800;
-        }
-
-        .home-section p.lead {
-            margin: 0;
-            font-size: clamp(1.02rem, 2vw, 1.12rem);
-            color: var(--muted);
-            line-height: 1.6;
         }
 
         .home-steps {
@@ -204,25 +186,8 @@ declare(strict_types=1);
         .home-step {
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 10px;
             min-width: 0;
-        }
-
-        .home-step__visual {
-            width: 100%;
-            aspect-ratio: 4 / 3;
-            overflow: hidden;
-            background: var(--surface-strong);
-            border: none;
-            border-radius: 0;
-            padding: 0;
-        }
-
-        .home-step__visual img {
-            display: block;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
         }
 
         .home-step__num {
@@ -241,75 +206,17 @@ declare(strict_types=1);
             line-height: 1.25;
         }
 
-        .home-example {
-            margin-top: 36px;
-            max-width: 28rem;
-            display: grid;
-            gap: 0;
-        }
-
-        .home-example__row {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
-            gap: 16px;
-            padding: 16px 0;
-            border-bottom: 1px solid var(--border);
-            font-size: 1.02rem;
-        }
-
-        .home-example__row:first-child {
-            border-top: 1px solid var(--border);
-        }
-
-        .home-example__row dt {
+        .home-step p {
             margin: 0;
             color: var(--muted);
-            font-weight: 600;
+            line-height: 1.5;
         }
 
-        .home-example__row dd {
-            margin: 0;
-            font-weight: 800;
-            letter-spacing: -0.02em;
-            font-variant-numeric: tabular-nums;
-            text-align: right;
-        }
+        .home-final { text-align: left; max-width: 36rem; }
 
-        .home-example__row--total {
-            border-bottom: none;
-            padding-top: 18px;
-        }
+        .home-final .home-text-cta { margin-top: 24px; }
 
-        .home-example__row--total dt,
-        .home-example__row--total dd {
-            color: var(--text);
-            font-size: 1.12rem;
-        }
-
-        .home-example__note {
-            margin: 14px 0 0;
-            font-size: 0.88rem;
-            color: var(--muted);
-        }
-
-        .home-final {
-            text-align: left;
-            max-width: 36rem;
-        }
-
-        .home-final .button {
-            margin-top: 24px;
-            border-radius: 999px;
-            padding: 18px 32px;
-            font-size: 1.05rem;
-            font-weight: 800;
-            box-shadow: 0 14px 28px rgba(46, 157, 120, 0.25);
-        }
-
-        .home-disclaimer {
-            padding: 0 0 40px;
-        }
+        .home-disclaimer { padding: 0 0 40px; }
 
         .home-disclaimer p {
             margin: 0 auto;
@@ -332,32 +239,19 @@ declare(strict_types=1);
             margin: 0 10px;
         }
 
-        .home-footer-links a:hover {
-            color: var(--accent-dark);
-        }
+        .home-footer-links a:hover { color: var(--accent-dark); }
 
-        .home-reveal {
-            animation: homeFadeUp 0.7s ease both;
-        }
-
+        .home-reveal { animation: homeFadeUp 0.7s ease both; }
         .home-reveal--2 { animation-delay: 0.08s; }
         .home-reveal--3 { animation-delay: 0.16s; }
 
         @keyframes homeFadeUp {
-            from {
-                opacity: 0;
-                transform: translateY(12px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .home-reveal {
-                animation: none;
-            }
+            .home-reveal { animation: none; }
         }
     </style>
 </head>
@@ -368,22 +262,24 @@ declare(strict_types=1);
             <header class="site-header">
                 <a class="site-logo" href="/">yHome.ai</a>
                 <div class="site-header-actions">
-                    <a href="/houses.php" class="button button-nav-cta" data-cta-id="nav_upload_walkthrough">Upload Walkthrough</a>
+                    <a href="/houses.php" class="button button-nav-cta">Browse homes</a>
                 </div>
             </header>
 
             <div class="home-hero__grid">
                 <div class="home-hero__copy">
-                    <h1 class="home-hero__title home-reveal">Know the renovation cost before you make an offer.</h1>
-                    <p class="home-hero__sub home-reveal home-reveal--2">Upload a house walkthrough video and get an AI-powered renovation cost estimate.</p>
+                    <h1 class="home-hero__title home-reveal">Text us about any home.</h1>
+                    <p class="home-hero__sub home-reveal home-reveal--2">Ask about price, condition, schools, or open house — get quick answers by SMS. No app. No signup.</p>
                     <div class="home-hero__actions home-reveal home-reveal--3">
-                        <a href="/houses.php" class="button button-primary" data-cta-id="hero_upload_walkthrough">Upload Walkthrough</a>
+                        <a class="home-text-cta" href="sms:+16263238836">Text <strong>+1 (626) 323-8836</strong></a>
+                        <p class="home-text-consent">By texting, you agree to receive SMS replies from yhome.ai. Msg &amp; data rates may apply. Reply STOP to opt out.</p>
+                        <a class="home-hero__secondary" href="/houses.php">Or browse Arcadia listings</a>
                     </div>
                 </div>
                 <div class="home-hero__visual home-reveal home-reveal--2">
                     <img
                         src="https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg?auto=compress&cs=tinysrgb&w=1400"
-                        alt="Bright living room from a home walkthrough"
+                        alt="Buyer looking at a home"
                         width="1400"
                         height="1050"
                         decoding="async"
@@ -398,19 +294,14 @@ declare(strict_types=1);
         <div class="container">
             <div class="home-value">
                 <div class="home-value__copy">
-                    <p class="home-kicker">Why it matters</p>
-                    <h2>See the real cost of the home.</h2>
-                    <p class="lead">The asking price is only part of the cost. yhome helps you estimate potential kitchen, bathroom, flooring, paint, and other renovation expenses before you decide what to offer.</p>
-                    <div class="home-rooms" aria-hidden="true">
-                        <img src="https://images.pexels.com/photos/2724749/pexels-photo-2724749.jpeg?auto=compress&cs=tinysrgb&w=700" alt="" width="700" height="525" loading="lazy" decoding="async">
-                        <img src="https://images.pexels.com/photos/1457842/pexels-photo-1457842.jpeg?auto=compress&cs=tinysrgb&w=700" alt="" width="700" height="525" loading="lazy" decoding="async">
-                        <img src="https://images.pexels.com/photos/1454804/pexels-photo-1454804.jpeg?auto=compress&cs=tinysrgb&w=700" alt="" width="700" height="525" loading="lazy" decoding="async">
-                    </div>
+                    <p class="home-kicker">Why text yHome</p>
+                    <h2>Answers about the home you’re looking at.</h2>
+                    <p class="lead">Start with the street address. We pull listing facts we have, answer what we can, and flag what still needs the listing agent.</p>
                 </div>
                 <div class="home-value__media">
                     <img
                         src="https://images.pexels.com/photos/1080721/pexels-photo-1080721.jpeg?auto=compress&cs=tinysrgb&w=1200"
-                        alt="Kitchen interior that may need renovation"
+                        alt="Home exterior"
                         width="1200"
                         height="900"
                         loading="lazy"
@@ -428,69 +319,39 @@ declare(strict_types=1);
                 <h2>Three simple steps</h2>
                 <div class="home-steps">
                     <article class="home-step">
-                        <div class="home-step__visual">
-                            <img src="https://images.pexels.com/photos/8293778/pexels-photo-8293778.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Recording a home tour on a phone" width="900" height="675" loading="lazy" decoding="async">
-                        </div>
                         <span class="home-step__num">Step 1</span>
-                        <h3>Record the home</h3>
+                        <h3>Text our number</h3>
+                        <p>Say hi from your phone, or tap Text on any yHome listing page.</p>
                     </article>
                     <article class="home-step">
-                        <div class="home-step__visual">
-                            <img src="https://images.pexels.com/photos/4050315/pexels-photo-4050315.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Uploading a walkthrough video" width="900" height="675" loading="lazy" decoding="async">
-                        </div>
                         <span class="home-step__num">Step 2</span>
-                        <h3>Upload your walkthrough</h3>
+                        <h3>Send the address</h3>
+                        <p>Tell us which home — for example, 323 Santa Rosa Rd.</p>
                     </article>
                     <article class="home-step">
-                        <div class="home-step__visual">
-                            <img src="https://images.pexels.com/photos/8292886/pexels-photo-8292886.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Reviewing renovation costs before an offer" width="900" height="675" loading="lazy" decoding="async">
-                        </div>
                         <span class="home-step__num">Step 3</span>
-                        <h3>Get your renovation estimate</h3>
+                        <h3>Ask anything</h3>
+                        <p>Price, beds, last sold, schools, open house — we reply by text.</p>
                     </article>
                 </div>
             </div>
         </div>
     </section>
 
-    <section class="home-section">
-        <div class="container">
-            <div class="home-section__inner">
-                <p class="home-kicker">Example</p>
-                <h2>A $900K house may really be a $970K decision.</h2>
-                <dl class="home-example">
-                    <div class="home-example__row">
-                        <dt>Asking Price</dt>
-                        <dd>$900,000</dd>
-                    </div>
-                    <div class="home-example__row">
-                        <dt>Estimated Renovation</dt>
-                        <dd>$70,000</dd>
-                    </div>
-                    <div class="home-example__row home-example__row--total">
-                        <dt>Potential All-in Cost</dt>
-                        <dd>$970,000</dd>
-                    </div>
-                </dl>
-                <p class="home-example__note">Illustrative example only — not a real property listing.</p>
-            </div>
-        </div>
-    </section>
-
-    <section class="home-section home-section--soft" id="get-estimate">
+    <section class="home-section" id="get-started">
         <div class="container">
             <div class="home-final">
                 <p class="home-kicker">Ready when you are</p>
-                <h2>Touring a home?</h2>
-                <p class="lead">Upload your walkthrough before you make an offer.</p>
-                <a href="/houses.php" class="button button-primary" data-cta-id="final_get_renovation_estimate">Get Renovation Estimate</a>
+                <h2>Looking at a home right now?</h2>
+                <p class="lead">Text the address and your first question.</p>
+                <a class="home-text-cta" href="sms:+16263238836">Text <strong>+1 (626) 323-8836</strong></a>
             </div>
         </div>
     </section>
 
     <section class="home-disclaimer">
         <div class="container">
-            <p>yHome provides preliminary AI estimates based on visible conditions in your walkthrough video. Estimates are not a substitute for a professional home inspection or contractor quote. Hidden issues and local pricing can differ substantially from what appears on camera.</p>
+            <p>yHome replies use listing data we have on file and general neighborhood knowledge. Answers are not a substitute for a professional inspection, appraisal, or advice from the listing agent. Message frequency varies.</p>
             <nav class="home-footer-links" aria-label="Legal">
                 <a href="/privacy.php">Privacy</a>
                 <a href="/terms.php">Terms</a>
@@ -498,6 +359,5 @@ declare(strict_types=1);
         </div>
     </section>
 </main>
-
 </body>
 </html>

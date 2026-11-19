@@ -10,7 +10,7 @@ $userPages = [
     [
         'title' => 'Homepage',
         'path' => '/',
-        'note' => 'Marketing landing — renovation estimate pitch',
+        'note' => 'Marketing landing — text us about any home',
     ],
     [
         'title' => 'Houses',
