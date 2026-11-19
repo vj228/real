@@ -1295,7 +1295,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                         <a class="house-agent__claim" href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim this listing</a>
                                     </div>
                                 <?php endif; ?>
-                                <p class="house-agent__for-agents">Listing agents: claim this page to see buyer text leads for this home. <a href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim &amp; view leads</a></p>
+                                <p class="house-agent__for-agents">Listing agents: buyer text leads for this home. <a href="/lead.php?id=<?= (int) $id ?>">View leads</a></p>
                             </div>
                         <?php endif; ?>
                     </div>
