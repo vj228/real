@@ -1287,12 +1287,12 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                             <span class="house-agent__blur" aria-hidden="true"></span>
                                         </div>
                                         <p class="house-agent__hint">Contact unlocks after the listing agent claims this page.</p>
-                                        <a class="house-agent__claim" href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim this listing</a>
+                                        <a class="house-agent__claim" href="/lead.php?id=<?= (int) $id ?>">View leads</a>
                                     </div>
                                 <?php elseif (!$isLocalHost && !$agentClaimed): ?>
                                     <div class="house-agent__locked">
-                                        <p class="house-agent__hint">Contact unlocks after the listing agent claims this page.</p>
-                                        <a class="house-agent__claim" href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim this listing</a>
+                                        <p class="house-agent__hint">Contact unlocks after the listing is claimed.</p>
+                                        <a class="house-agent__claim" href="/lead.php?id=<?= (int) $id ?>">View leads</a>
                                     </div>
                                 <?php endif; ?>
                                 <p class="house-agent__for-agents">Listing agents: buyer text leads for this home. <a href="/lead.php?id=<?= (int) $id ?>">View leads</a></p>

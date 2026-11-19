@@ -228,7 +228,6 @@ if ($codeVal === '' && $successCode === null) {
         <?php if ($successCode !== null): ?>
             <div class="ac-ok">
                 Created <strong><?= ac_h($successCode) ?></strong>.
-                <a href="/agent-dashboard.php?code=<?= ac_h($successCode) ?>">Open their dashboard</a>
             </div>
         <?php endif; ?>
         <?php if ($successMsg !== null): ?>

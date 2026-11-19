@@ -28,14 +28,14 @@ $userPages = [
         'note' => 'Same house attributed to demo agent',
     ],
     [
-        'title' => 'Agent Partner dashboard',
-        'path' => '/agent-dashboard.php',
-        'note' => 'Agents sign in with listing-agent email',
-    ],
-    [
         'title' => 'Intake (legacy)',
         'path' => '/intake.php',
         'note' => 'Older cost/risk intake flow',
+    ],
+    [
+        'title' => 'House leads (test)',
+        'path' => '/lead.php?id=2548',
+        'note' => 'SMS leads for one listing — no login',
     ],
     [
         'title' => 'Privacy',
@@ -64,11 +64,6 @@ $adminPages = [
         'title' => 'Listing claims',
         'path' => '/agent-claims.php',
         'note' => 'All claimed / pending addresses — approve to unlock contact',
-    ],
-    [
-        'title' => 'Agent dashboard (listing email)',
-        'path' => '/agent-dashboard.php?email=vickilee1616@yahoo.com',
-        'note' => 'Open dashboard for scraped listing agent email',
     ],
     [
         'title' => 'This page index',
