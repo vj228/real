@@ -12,8 +12,7 @@ if ($pdo === null) {
 }
 
 $rows = $pdo->query(
-    'SELECT l.id, l.zpid, l.address, l.list_price, l.beds, l.baths, l.sqft, l.search_query, l.img_src, l.detail_url, l.created_at,
-            (SELECT a.id FROM ai_analyses a WHERE a.listing_id = l.id ORDER BY a.analyzed_at DESC, a.id DESC LIMIT 1) AS analysis_id
+    'SELECT l.id, l.zpid, l.address, l.list_price, l.beds, l.baths, l.sqft, l.search_query, l.img_src, l.detail_url, l.created_at
      FROM zillow_sale_listings l
      WHERE l.is_active = 1
      ORDER BY l.created_at DESC'
@@ -123,16 +122,6 @@ function money($n): string
             color: var(--muted);
             font-size: 0.85rem;
         }
-        .houses-card__badge {
-            display: inline-block;
-            margin-top: 8px;
-            padding: 3px 8px;
-            border-radius: 999px;
-            background: #ebf8f1;
-            color: #176948;
-            font-size: 0.75rem;
-            font-weight: 700;
-        }
     </style>
 </head>
 <body>
@@ -163,7 +152,6 @@ function money($n): string
                 $beds = $r['beds'] !== null ? (string) (float) $r['beds'] : '—';
                 $baths = $r['baths'] !== null ? (string) (float) $r['baths'] : '—';
                 $sqft = $r['sqft'] !== null ? number_format((int) $r['sqft']) : '—';
-                $hasEstimate = !empty($r['analysis_id']);
                 ?>
                 <a class="houses-card" href="<?= h($href) ?>">
                     <?php if ($img !== ''): ?>
@@ -175,9 +163,6 @@ function money($n): string
                         <p class="houses-card__price"><?= h(money($r['list_price'])) ?></p>
                         <p class="houses-card__addr"><?= h((string) $r['address']) ?></p>
                         <p class="houses-card__meta"><?= h($beds) ?> bed · <?= h($baths) ?> bath · <?= h($sqft) ?> sqft · <?= h((string) $r['search_query']) ?></p>
-                        <?php if ($hasEstimate): ?>
-                            <span class="houses-card__badge">Estimate ready</span>
-                        <?php endif; ?>
                     </div>
                 </a>
             <?php endforeach; ?>
