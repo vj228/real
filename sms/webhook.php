@@ -344,17 +344,33 @@ function rapidListingRow(array $d) {
 
 function saveFacts($db, $listingId, array $facts) {
     unset($facts['row']);
-    $stmt = $db->prepare("REPLACE INTO sms_home_facts (listing_id, facts_json) VALUES (?, ?)");
-    $stmt->execute([$listingId, json_encode($facts)]);
+    $open = isset($facts['open_house']) && $facts['open_house'] !== ''
+        ? mb_substr(trim((string) $facts['open_house']), 0, 500)
+        : null;
+    // Keep a manually set open_house if RapidAPI has nothing (or would blank it).
+    $stmt = $db->prepare(
+        "INSERT INTO sms_home_facts (listing_id, facts_json, open_house) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           facts_json = VALUES(facts_json),
+           open_house = IF(VALUES(open_house) IS NULL OR VALUES(open_house) = '', open_house, VALUES(open_house))"
+    );
+    $stmt->execute([$listingId, json_encode($facts), $open]);
 }
 
 // Cached Zillow details for a listing; fetched once (1 API call) if the listing has a real zpid.
+// Prefer the open_house column over the JSON blob so manual edits are easy.
 function homeFacts($db, $listing) {
-    $stmt = $db->prepare("SELECT facts_json FROM sms_home_facts WHERE listing_id = ?");
+    $stmt = $db->prepare("SELECT facts_json, open_house FROM sms_home_facts WHERE listing_id = ?");
     $stmt->execute([$listing['id']]);
-    $json = $stmt->fetchColumn();
-    if ($json !== false) {
-        return json_decode($json, true) ?: null;
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+        $facts = json_decode((string) $row['facts_json'], true) ?: [];
+        // Non-null column wins (including '' to clear a stale JSON value).
+        if ($row['open_house'] !== null) {
+            $col = trim((string) $row['open_house']);
+            $facts['open_house'] = $col !== '' ? $col : null;
+        }
+        return $facts ?: null;
     }
     if (!ctype_digit((string) $listing['zpid'])) {
         return null;
