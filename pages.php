@@ -66,6 +66,11 @@ $adminPages = [
         'note' => 'All claimed / pending addresses — approve to unlock contact',
     ],
     [
+        'title' => 'SMS lead report',
+        'path' => '/sms/leads.php',
+        'note' => 'Buyer texts + need-info flags — add ?key= from app_secrets.leads_report_key',
+    ],
+    [
         'title' => 'Agent dashboard (listing email)',
         'path' => '/agent-dashboard.php?email=vickilee1616@yahoo.com',
         'note' => 'Open dashboard for scraped listing agent email',
