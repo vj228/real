@@ -209,11 +209,8 @@ require_once __DIR__ . '/helpers/agent_referral.php';
 $stmt = $pdo->prepare(
     'SELECT l.id, l.address, l.detail_url, l.list_price, l.zestimate, l.price_vs_zestimate_pct,
             l.price_per_sqft, l.beds, l.baths, l.sqft, l.days_on_zillow, l.img_src, l.zpid, l.search_query, l.is_active,
-            l.listing_agent_name, l.listing_agent_phone, l.listing_agent_email, l.listing_broker_name,
-            l.listing_agent_claimed, l.listing_agent_claim_agent_id,
-            a.email AS claim_agent_email, a.name AS claim_agent_name
+            l.listing_agent_name, l.listing_agent_phone, l.listing_agent_email, l.listing_broker_name
      FROM zillow_sale_listings l
-     LEFT JOIN agents a ON a.id = l.listing_agent_claim_agent_id
      WHERE l.id = ?
      LIMIT 1'
 );
@@ -835,59 +832,6 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             font-size: 0.95rem;
         }
         .house-agent__contact a:hover { text-decoration: underline; }
-        .house-agent__locked {
-            margin-top: 10px;
-            display: grid;
-            gap: 8px;
-        }
-        .house-agent__blur-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            min-height: 28px;
-        }
-        .house-agent__blur-label {
-            flex: 0 0 52px;
-            font-size: 0.78rem;
-            font-weight: 700;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }
-        .house-agent__blur {
-            flex: 1;
-            max-width: 220px;
-            height: 18px;
-            border-radius: 6px;
-            background: linear-gradient(90deg, #d8dde6 0%, #eef1f6 45%, #d8dde6 100%);
-            background-size: 200% 100%;
-            filter: blur(5px);
-            user-select: none;
-            pointer-events: none;
-        }
-        .house-agent__claim {
-            margin-top: 4px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 8px 12px;
-            border-radius: 999px;
-            background: #111827;
-            color: #fff !important;
-            font-size: 0.88rem;
-            font-weight: 700;
-            text-decoration: none !important;
-            width: fit-content;
-        }
-        .house-agent__claim:hover {
-            opacity: 0.92;
-        }
-        .house-agent__hint {
-            margin: 0;
-            font-size: 0.82rem;
-            color: var(--muted);
-            line-height: 1.35;
-        }
         .estimate-panel {
             background: #fff;
             border: 1px solid var(--border);
@@ -1235,21 +1179,9 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                         <?php
                         $agentName = trim((string) ($listing['listing_agent_name'] ?? ''));
                         $agentPhone = trim((string) ($listing['listing_agent_phone'] ?? ''));
-                        $listingEmail = trim((string) ($listing['listing_agent_email'] ?? ''));
-                        $claimEmail = trim((string) ($listing['claim_agent_email'] ?? ''));
+                        $agentEmail = trim((string) ($listing['listing_agent_email'] ?? ''));
                         $brokerName = trim((string) ($listing['listing_broker_name'] ?? ''));
-                        $agentClaimed = (int) ($listing['listing_agent_claimed'] ?? 0) === 1;
-                        $httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-                        $httpHost = preg_replace('/:\d+$/', '', $httpHost) ?: $httpHost;
-                        $isLocalHost = in_array($httpHost, ['localhost', '127.0.0.1', '::1'], true);
-                        // Public contact email after approval = claim login email (independent of scraped listing email).
-                        // On localhost always unlock scraped phone/email for local QA.
-                        $publicEmail = $isLocalHost
-                            ? ($listingEmail !== '' ? $listingEmail : $claimEmail)
-                            : ($agentClaimed && $claimEmail !== '' ? $claimEmail : '');
-                        $showAgentContact = $isLocalHost || $agentClaimed;
-                        $hasScrapedContact = $agentPhone !== '' || $listingEmail !== '';
-                        $hasAgentBlock = $agentName !== '' || $brokerName !== '' || $hasScrapedContact || ($agentClaimed && $claimEmail !== '');
+                        $hasAgentBlock = $agentName !== '' || $brokerName !== '' || $agentPhone !== '' || $agentEmail !== '';
                         if ($hasAgentBlock):
                         ?>
                             <div class="house-agent">
@@ -1260,34 +1192,14 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                 <?php if ($brokerName !== ''): ?>
                                     <p class="house-agent__broker"><?= house_h($brokerName) ?></p>
                                 <?php endif; ?>
-                                <?php if ($showAgentContact && ($agentPhone !== '' || $publicEmail !== '')): ?>
+                                <?php if ($agentPhone !== '' || $agentEmail !== ''): ?>
                                     <div class="house-agent__contact">
                                         <?php if ($agentPhone !== ''): ?>
                                             <a href="tel:<?= house_h(preg_replace('/[^\d+]/', '', $agentPhone) ?: $agentPhone) ?>"><?= house_h($agentPhone) ?></a>
                                         <?php endif; ?>
-                                        <?php if ($publicEmail !== ''): ?>
-                                            <a href="mailto:<?= house_h($publicEmail) ?>"><?= house_h($publicEmail) ?></a>
+                                        <?php if ($agentEmail !== ''): ?>
+                                            <a href="mailto:<?= house_h($agentEmail) ?>"><?= house_h($agentEmail) ?></a>
                                         <?php endif; ?>
-                                    </div>
-                                <?php elseif (!$isLocalHost && $hasScrapedContact): ?>
-                                    <div class="house-agent__locked">
-                                        <?php if ($agentPhone !== ''): ?>
-                                            <div class="house-agent__blur-row">
-                                                <span class="house-agent__blur-label">Phone</span>
-                                                <span class="house-agent__blur" aria-hidden="true"></span>
-                                            </div>
-                                        <?php endif; ?>
-                                        <div class="house-agent__blur-row">
-                                            <span class="house-agent__blur-label">Email</span>
-                                            <span class="house-agent__blur" aria-hidden="true"></span>
-                                        </div>
-                                        <p class="house-agent__hint">Contact unlocks after the listing agent claims this page.</p>
-                                        <a class="house-agent__claim" href="/lead.php?id=<?= (int) $id ?>">View leads</a>
-                                    </div>
-                                <?php elseif (!$isLocalHost && !$agentClaimed): ?>
-                                    <div class="house-agent__locked">
-                                        <p class="house-agent__hint">Contact unlocks after the listing is claimed.</p>
-                                        <a class="house-agent__claim" href="/lead.php?id=<?= (int) $id ?>">View leads</a>
                                     </div>
                                 <?php endif; ?>
                             </div>
