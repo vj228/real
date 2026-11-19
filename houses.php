@@ -34,8 +34,8 @@ function money($n): string
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Houses — yHome</title>
-    <meta name="description" content="Browse homes and get an AI renovation cost estimate from a walkthrough video.">
+    <title>Houses — yHome.ai</title>
+    <meta name="description" content="Browse Arcadia listings and text yHome.ai to ask about any home.">
     <link rel="stylesheet" href="/style.css">
     <style>
         .houses-page {
@@ -151,7 +151,7 @@ function money($n): string
             <?php if ($rows === []): ?>
                 <p class="houses-intro__callout">No active listings right now. Fresh homes will appear here after the next listing refresh.</p>
             <?php else: ?>
-                <p class="houses-intro__callout">Pick a home below → upload a walkthrough → get your renovation estimate.</p>
+                <p class="houses-intro__callout">Pick a home → text +1 (626) 323-8836 → ask about that listing.</p>
             <?php endif; ?>
         </div>
 
