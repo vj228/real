@@ -372,6 +372,22 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             min-height: 60px;
             box-shadow: 0 16px 32px rgba(46, 157, 120, 0.3);
         }
+        .upload-cta--secondary {
+            margin-top: 22px;
+        }
+        .upload-cta--secondary .button {
+            padding: 10px 16px;
+            font-size: 0.92rem;
+            font-weight: 700;
+            min-height: 0;
+            background: #fff;
+            color: var(--accent-dark, #176948);
+            border: 1px solid #b7e4cd;
+            box-shadow: none;
+        }
+        .upload-cta--secondary .button:hover {
+            background: #ebf8f1;
+        }
         .upload-cta__hint {
             margin: 0;
             color: var(--muted);
@@ -380,17 +396,18 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
         }
         .house-text-line {
             display: inline-block;
-            margin: 18px 0 4px;
-            padding: 14px 20px;
+            margin: 4px 0 4px;
+            padding: 18px 24px;
             border: 2px solid var(--accent, #2e9d78);
             border-radius: 14px;
             background: #ebf8f1;
             color: var(--accent-dark, #176948);
-            font-size: clamp(1.15rem, 2.4vw, 1.4rem);
+            font-size: clamp(1.2rem, 2.5vw, 1.45rem);
             font-weight: 800;
             line-height: 1.3;
             letter-spacing: -0.01em;
             text-decoration: none;
+            box-shadow: 0 12px 28px rgba(46, 157, 120, 0.22);
         }
         .house-text-line strong { white-space: nowrap; }
         .house-text-line:hover { background: #dcf2e6; }
@@ -1153,27 +1170,11 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
 
             <div class="house-convert">
                 <div class="house-convert__copy">
-                    <p class="house-convert__kicker">For this home</p>
-                    <h1 class="house-convert__title">
-                        <?= $hasEstimate
-                            ? 'Touring this home?'
-                            : 'Help buyers understand the renovation cost of this home' ?>
-                    </h1>
+                    <p class="house-convert__kicker">Ask about this home</p>
+                    <h1 class="house-convert__title">Text us your questions about this listing</h1>
                     <p class="house-convert__sub">
-                        <?php if ($hasEstimate): ?>
-                            Get a more personalized renovation estimate. Record your own walkthrough to capture areas the listing video may not show.
-                        <?php else: ?>
-                            Upload the listing video or paste a YouTube walkthrough to create a free preliminary AI renovation estimate.
-                        <?php endif; ?>
+                        Price, condition, schools, open house — get quick answers by text. No app. No signup.
                     </p>
-
-                    <div class="upload-cta" id="upload">
-                        <button type="button" class="button button-primary" id="open-upload-modal">
-                            <?= $hasEstimate ? 'Upload My Walkthrough' : 'Upload Listing Video' ?>
-                        </button>
-                        <p class="upload-cta__hint"><?= $hasEstimate ? 'Free · No signup' : 'Free · No signup · File or YouTube' ?></p>
-                    </div>
-                    <div class="house-status" id="video-status" role="status" aria-live="polite"></div>
 
                     <a class="house-text-line" href="sms:+16263238836">
                         Text <strong>+1 (626) 323-8836</strong> to ask about this home
@@ -1181,22 +1182,28 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                     <p class="house-text-consent">By texting this number, you agree to receive SMS replies about this listing from yhome.ai. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out.</p>
 
                     <ul class="house-outcomes">
-                        <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Visible condition score for kitchen, living, bath & bedroom</span></li>
-                        <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Required vs optional work with budget ranges</span></li>
-                        <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>A clearer picture before you spend time or money on this house</span></li>
+                        <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Ask about price, beds, size, and listing details</span></li>
+                        <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Get neighborhood and schools context</span></li>
+                        <li><span class="house-outcomes__mark" aria-hidden="true"></span><span>Connect with the listing agent when you need a human</span></li>
                     </ul>
 
                     <?php if ($hasEstimate && $analysis['overall_score'] !== null): ?>
                         <div class="house-proof">
                             <p class="house-proof__stats">
-                                Current visible condition: <?= (int) $analysis['overall_score'] ?>/100
+                                AI renovation estimate: <?= house_h(house_money($analysis['total_low'])) ?> – <?= house_h(house_money($analysis['total_high'])) ?>
+                                · condition <?= (int) $analysis['overall_score'] ?>/100
                             </p>
-                            <p class="house-proof__stats">
-                                Renovation budget: <?= house_h(house_money($analysis['total_low'])) ?> – <?= house_h(house_money($analysis['total_high'])) ?>
-                            </p>
-                            <a href="#estimate">See full estimate</a>
+                            <a href="#estimate">See renovation estimate</a>
                         </div>
                     <?php endif; ?>
+
+                    <div class="upload-cta upload-cta--secondary" id="upload">
+                        <button type="button" class="button" id="open-upload-modal">
+                            <?= $hasEstimate ? 'Upload my walkthrough' : 'Add a tour video (optional)' ?>
+                        </button>
+                        <p class="upload-cta__hint">Optional · Free · No signup</p>
+                    </div>
+                    <div class="house-status" id="video-status" role="status" aria-live="polite"></div>
                 </div>
 
                 <div class="house-convert__visual">
@@ -1221,7 +1228,9 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                             <?php if (!empty($listing['detail_url'])): ?>
                                 <a href="<?= house_h((string) $listing['detail_url']) ?>" target="_blank" rel="noopener">View on Zillow</a>
                             <?php endif; ?>
-                            <a href="#estimate"><?= $hasEstimate ? 'See renovation estimate' : 'Jump to estimate' ?></a>
+                            <?php if ($hasEstimate): ?>
+                                <a href="#estimate">See renovation estimate</a>
+                            <?php endif; ?>
                         </div>
                         <?php
                         $agentName = trim((string) ($listing['listing_agent_name'] ?? ''));
@@ -1294,7 +1303,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
             <div class="estimate-panel">
                 <h2>Renovation estimate</h2>
                 <?php if (!$hasEstimate): ?>
-                    <p class="estimate-empty">No estimate yet. <a href="#upload" data-open-upload>Upload a house-tour video</a> to generate one for this home.</p>
+                    <p class="estimate-empty">No renovation estimate for this home yet. You can still text questions about the listing above. <a href="#upload" data-open-upload>Add a tour video</a> if you want an AI estimate later.</p>
                 <?php else: ?>
                     <?php foreach ($estimates as $estIdx => $est): ?>
                         <?php
