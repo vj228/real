@@ -865,6 +865,20 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
         .house-agent__claim:hover {
             opacity: 0.92;
         }
+        .house-agent__for-agents {
+            margin: 12px 0 0;
+            padding-top: 10px;
+            border-top: 1px solid var(--border, #e5e7eb);
+            font-size: 0.84rem;
+            line-height: 1.4;
+            color: var(--muted);
+        }
+        .house-agent__for-agents a {
+            color: var(--accent-dark, #176948);
+            font-weight: 700;
+            text-decoration: none;
+        }
+        .house-agent__for-agents a:hover { text-decoration: underline; }
         .house-agent__hint {
             margin: 0;
             font-size: 0.82rem;
@@ -1281,6 +1295,7 @@ $pageTitle = $address . ' — Renovation estimate | yHome';
                                         <a class="house-agent__claim" href="/agent-dashboard.php?claim_listing=<?= (int) $id ?>">Claim this listing</a>
                                     </div>
                                 <?php endif; ?>
+                                <p class="house-agent__for-agents">Listing agents: buyers text us about this home — we can send you those leads. <a href="/for-agents.php">See how it works</a></p>
                             </div>
                         <?php endif; ?>
                     </div>

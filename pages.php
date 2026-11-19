@@ -68,7 +68,12 @@ $adminPages = [
     [
         'title' => 'SMS lead report',
         'path' => '/sms/leads.php',
-        'note' => 'Buyer texts + need-info flags — add ?key= from app_secrets.leads_report_key',
+        'note' => 'Agent-focused lead report — add ?key= from app_secrets.leads_report_key',
+    ],
+    [
+        'title' => 'For agents',
+        'path' => '/for-agents.php',
+        'note' => 'Public pitch: leads from buyer texts + optional Zillow number line',
     ],
     [
         'title' => 'Agent dashboard (listing email)',

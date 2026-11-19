@@ -136,8 +136,8 @@ $baseQ = 'key=' . rawurlencode($key);
             </div>
         </header>
 
-        <h1>SMS lead report</h1>
-        <p class="leads-lead">Buyer texts about listings. Use this to improve answers and later show agents what leads you already have.</p>
+        <h1>Lead report for agents</h1>
+        <p class="leads-lead">Buyer questions from yHome listing pages. Show this to agents: who asked, about which home, and what still needs an answer.</p>
 
         <div class="leads-stats">
             <div class="leads-stat"><b><?= (int) ($stats['buyers'] ?? 0) ?></b><span>Buyers</span></div>
