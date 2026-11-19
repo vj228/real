@@ -8,16 +8,6 @@ declare(strict_types=1);
 
 $userPages = [
     [
-        'title' => 'Homepage',
-        'path' => '/',
-        'note' => 'Marketing landing — text us about any home',
-    ],
-    [
-        'title' => 'Houses',
-        'path' => '/houses.php',
-        'note' => 'Browse Arcadia listings',
-    ],
-    [
         'title' => 'House detail',
         'path' => '/house.php?id=2548',
         'note' => 'Buyer page for one listing (SMS CTA)',
