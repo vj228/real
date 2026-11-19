@@ -66,16 +66,6 @@ $adminPages = [
         'note' => 'All claimed / pending addresses — approve to unlock contact',
     ],
     [
-        'title' => 'SMS lead report',
-        'path' => '/sms/leads.php',
-        'note' => 'Agent-focused lead report — add ?key= from app_secrets.leads_report_key',
-    ],
-    [
-        'title' => 'For agents',
-        'path' => '/for-agents.php',
-        'note' => 'Public pitch: leads from buyer texts + optional Zillow number line',
-    ],
-    [
         'title' => 'Agent dashboard (listing email)',
         'path' => '/agent-dashboard.php?email=vickilee1616@yahoo.com',
         'note' => 'Open dashboard for scraped listing agent email',

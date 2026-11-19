@@ -169,6 +169,7 @@ $stats = [
 ];
 $activity = [];
 $myClaims = [];
+$smsLeads = [];
 $sampleListingId = 1;
 $sampleAddress = 'example property';
 $referralLink = '';
@@ -256,6 +257,27 @@ if ($agent !== null && $pdo instanceof PDO) {
         $myClaims = $claimStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) {
         $myClaims = [];
+    }
+
+    // Buyer SMS leads only for listings this agent claimed and yHome approved.
+    try {
+        $leadStmt = $pdo->prepare(
+            "SELECT l.id, l.listing_id, l.buyer_phone, l.message, l.cannot_answer, l.created_at,
+                    z.address
+             FROM sms_leads l
+             INNER JOIN zillow_sale_listings z ON z.id = l.listing_id
+             WHERE l.direction = 'in'
+               AND l.listing_id > 0
+               AND z.listing_agent_claim_agent_id = ?
+               AND z.listing_agent_claimed = 1
+               AND l.buyer_phone NOT LIKE '+1555%'
+             ORDER BY l.id DESC
+             LIMIT 200"
+        );
+        $leadStmt->execute([$agentId]);
+        $smsLeads = $leadStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        $smsLeads = [];
     }
 }
 ?>
@@ -599,6 +621,58 @@ if ($agent !== null && $pdo instanceof PDO) {
                                             <?php else: ?>
                                                 <span class="agent-badge">Pending verification</span>
                                             <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </section>
+
+            <section class="agent-section" id="sms-leads">
+                <h2>Buyer text leads</h2>
+                <p>Questions buyers texted about your <strong>approved</strong> listings. Only you see these.</p>
+                <?php if ($smsLeads === []): ?>
+                    <p class="agent-empty">No buyer texts yet on your approved listings. After a listing is approved, buyer questions for that home show up here.</p>
+                <?php else: ?>
+                    <div class="agent-table-wrap">
+                        <table class="agent-table">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Home</th>
+                                    <th>Buyer phone</th>
+                                    <th>Question</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($smsLeads as $lead): ?>
+                                    <?php
+                                    $lid = (int) ($lead['listing_id'] ?? 0);
+                                    $need = (int) ($lead['cannot_answer'] ?? 0) === 1;
+                                    $phone = trim((string) ($lead['buyer_phone'] ?? ''));
+                                    if (preg_match('/^\+1(\d{10})$/', $phone, $pm)) {
+                                        $phone = '(' . substr($pm[1], 0, 3) . ') ' . substr($pm[1], 3, 3) . '-' . substr($pm[1], 6);
+                                    }
+                                    $when = (string) ($lead['created_at'] ?? '');
+                                    $whenLabel = $when !== '' ? date('M j, Y g:ia', strtotime($when)) : '—';
+                                    ?>
+                                    <tr>
+                                        <td><?= dash_h($whenLabel) ?></td>
+                                        <td>
+                                            <?php if ($lid > 0): ?>
+                                                <a href="/house.php?id=<?= $lid ?>"><?= dash_h(trim((string) ($lead['address'] ?? '')) ?: ('#' . $lid)) ?></a>
+                                            <?php else: ?>
+                                                —
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?= dash_h($phone !== '' ? $phone : '—') ?></td>
+                                        <td>
+                                            <?php if ($need): ?>
+                                                <span class="agent-badge">Need info</span>
+                                            <?php endif; ?>
+                                            <?= dash_h((string) ($lead['message'] ?? '')) ?>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
