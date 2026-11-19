@@ -469,10 +469,10 @@ if (!$listing) {
 }
 $listingId = $listing ? (int) $listing['id'] : 0;
 
-// Log every inbound message
+// Log every inbound message (attach listing_id when we already know the home).
 $inboundLeadId = 0;
 if ($body !== '') {
-    $inboundLeadId = logLead($db, $justPicked ? $listingId : 0, $from, 'in', $body);
+    $inboundLeadId = logLead($db, $listingId, $from, 'in', $body);
 }
 
 // --- STOP / HELP: Twilio's opt-out handling already sends the registered reply; just record it ---
