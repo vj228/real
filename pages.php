@@ -18,57 +18,27 @@ $userPages = [
         'note' => 'Browse Arcadia listings',
     ],
     [
-        'title' => 'House detail (example)',
-        'path' => '/house.php?id=1',
-        'note' => 'Property page + walkthrough upload',
+        'title' => 'House detail',
+        'path' => '/house.php?id=2548',
+        'note' => 'Buyer page for one listing (SMS CTA)',
     ],
     [
-        'title' => 'House with referral',
-        'path' => '/house.php?id=1&ref=AGT102',
-        'note' => 'Same house attributed to demo agent',
-    ],
-    [
-        'title' => 'Intake (legacy)',
-        'path' => '/intake.php',
-        'note' => 'Older cost/risk intake flow',
-    ],
-    [
-        'title' => 'House leads (test)',
+        'title' => 'House leads',
         'path' => '/lead.php?id=2548',
-        'note' => 'SMS leads for one listing — no login',
-    ],
-    [
-        'title' => 'Privacy',
-        'path' => '/privacy.php',
-        'note' => 'Privacy policy',
-    ],
-    [
-        'title' => 'Terms',
-        'path' => '/terms.php',
-        'note' => 'Terms of service',
+        'note' => 'SMS inbound leads for one listing',
     ],
 ];
 
 $adminPages = [
     [
-        'title' => 'Analysis (admin)',
-        'path' => '/analysis.php?id=1',
-        'note' => 'Process tours + run Gemini renovation analysis',
+        'title' => 'SMS test',
+        'path' => '/sms/test.php',
+        'note' => 'Fake SMS chat — localhost only',
     ],
     [
-        'title' => 'Create agent',
-        'path' => '/agent-create.php',
-        'note' => 'Add partner referral codes',
-    ],
-    [
-        'title' => 'Listing claims',
-        'path' => '/agent-claims.php',
-        'note' => 'All claimed / pending addresses — approve to unlock contact',
-    ],
-    [
-        'title' => 'This page index',
-        'path' => '/pages.php',
-        'note' => 'You are here',
+        'title' => 'Open houses',
+        'path' => '/sms/open-house.php',
+        'note' => 'Edit open-house text per listing',
     ],
 ];
 
