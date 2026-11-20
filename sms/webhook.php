@@ -151,6 +151,31 @@ function sendSms($toNumber, $fromNumber, $text) {
     return curl_exec($ch);
 }
 
+// Carriers (Twilio 30007) expect opt-out language on the initial outbound to each buyer.
+function withOptOut($text) {
+    if (preg_match('/reply\s+STOP\s+to\s+opt\s+out/i', $text)) {
+        return $text;
+    }
+    return rtrim($text) . "\nReply STOP to opt out.";
+}
+
+function buyerNeedsOptOut($db, $phone) {
+    $stmt = $db->prepare(
+        "SELECT 1 FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' AND message LIKE '%STOP to opt out%' LIMIT 1"
+    );
+    $stmt->execute([$phone]);
+    return $stmt->fetchColumn() === false;
+}
+
+// Buyer replies only — appends STOP once per phone (first outbound).
+function sendBuyerSms($db, $toNumber, $fromNumber, $text) {
+    if (buyerNeedsOptOut($db, $toNumber)) {
+        $text = withOptOut($text);
+    }
+    sendSms($toNumber, $fromNumber, $text);
+    return $text;
+}
+
 // Free-tier daily caps are per model (gemini-3.6-flash allows only ~20/day), so use models with
 // higher free limits and fall through to the next one when a model errors or hits its cap.
 const SMS_AI_MODELS = ['gemini-3.5-flash-lite', 'gemma-4-31b-it'];
@@ -521,7 +546,7 @@ if (!$justPicked && preg_match('/^\s*\d{1,6}\s+[A-Za-z]/', $body)) {
     $listing = lookupAndSaveListing($db, $body);
     if (!$listing) {
         $msg = "yhome.ai: I couldn't find that address. Please check it and include the city (for example: 323 Santa Rosa Rd, Arcadia).";
-        sendSms($from, $to, $msg);
+        $msg = sendBuyerSms($db, $from, $to, $msg);
         logLead($db, 0, $from, 'out', $msg);
         twimlOk();
     }
@@ -534,7 +559,7 @@ if (!$listing) {
     $msg = preg_match('/\b\d{1,6}\s+[A-Za-z]/', $body)
         ? "yhome.ai: I couldn't find that address. Please reply with the street address as shown on the listing page (for example: 323 Santa Rosa Rd)."
         : $askAddress;
-    sendSms($from, $to, $msg);
+    $msg = sendBuyerSms($db, $from, $to, $msg);
     logLead($db, 0, $from, 'out', $msg);
     twimlOk();
 }
@@ -542,7 +567,7 @@ if (!$listing) {
 // --- They just named the house: confirm it ---
 if ($justPicked) {
     $msg = "yhome.ai: Got it — " . listingSummary($listing) . ". What would you like to know about this home?";
-    sendSms($from, $to, $msg);
+    $msg = sendBuyerSms($db, $from, $to, $msg);
     logLead($db, $listingId, $from, 'out', $msg);
     twimlOk();
 }
@@ -550,7 +575,7 @@ if ($justPicked) {
 // --- Greeting while a home is already remembered: reply without using Gemini ---
 if (preg_match('/^(hi|hii+|hello|hey|yo|sup|good\s*(morning|afternoon|evening))[!?.]*$/i', $body)) {
     $msg = "yhome.ai: Still helping with " . listingSummary($listing) . ". What would you like to know about this home?";
-    sendSms($from, $to, $msg);
+    $msg = sendBuyerSms($db, $from, $to, $msg);
     logLead($db, $listingId, $from, 'out', $msg);
     twimlOk();
 }
@@ -599,7 +624,7 @@ if ($needsInfo || answerNeedsInfo($answer)) {
     flagLeadCannotAnswer($db, $inboundLeadId, $listingId);
     $needsInfo = true;
 }
-sendSms($from, $to, $answer);
+$answer = sendBuyerSms($db, $from, $to, $answer);
 logLead($db, $listingId, $from, 'out', $answer, $needsInfo);
 
 // --- Agent alert: first question from this buyer for this listing ---
