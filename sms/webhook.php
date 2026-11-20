@@ -159,19 +159,9 @@ function withOptOut($text) {
     return rtrim($text) . "\nReply STOP to opt out.";
 }
 
-function buyerNeedsOptOut($db, $phone) {
-    $stmt = $db->prepare(
-        "SELECT 1 FROM sms_leads WHERE buyer_phone = ? AND direction = 'out' AND message LIKE '%STOP to opt out%' LIMIT 1"
-    );
-    $stmt->execute([$phone]);
-    return $stmt->fetchColumn() === false;
-}
-
-// Buyer replies only — appends STOP once per phone (first outbound).
+// Buyer replies — always include STOP language (Twilio/carriers expect it on informational SMS).
 function sendBuyerSms($db, $toNumber, $fromNumber, $text) {
-    if (buyerNeedsOptOut($db, $toNumber)) {
-        $text = withOptOut($text);
-    }
+    $text = withOptOut($text);
     sendSms($toNumber, $fromNumber, $text);
     return $text;
 }
